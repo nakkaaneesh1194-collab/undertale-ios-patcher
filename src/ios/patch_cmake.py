@@ -75,8 +75,8 @@ IOS_BLOCK = '''elseif(PLATFORM STREQUAL "ios")
 '''
 
 src = src.replace(
-    '    message(FATAL_ERROR "Unknown platform! ${PLATFORM}")',
-    IOS_BLOCK + '    message(FATAL_ERROR "Unknown platform! ${PLATFORM}")'
+    'else()\n    message(FATAL_ERROR "Unknown platform! ${PLATFORM}")',
+    IOS_BLOCK + 'else()\n    message(FATAL_ERROR "Unknown platform! ${PLATFORM}")'
 )
 
 with open(path, "w") as f:

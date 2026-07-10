@@ -216,31 +216,55 @@ else
     success "Butterscotch iOS patch: already applied"
 fi
 
-# --- SDL2 xcframework ---
+# --- SDL2 for iOS (build from source) ---
 SDL2_XCFW="$SDL2_DIR/SDL2.framework"
 if [ ! -d "$SDL2_XCFW" ]; then
-    warn "SDL2.framework not found."
-    SDL2_URL="https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-2.30.3.dmg"
-    SDL2_SIZE=$(fetch_size "$SDL2_URL")
-    if ask_yn "Download SDL2 for iOS? (~$SDL2_SIZE)"; then
-        info "Downloading SDL2..."
-        TMP_DMG=$(mktemp /tmp/SDL2.XXXXXX).dmg
-        curl -L --progress-bar "$SDL2_URL" -o "$TMP_DMG" || error "SDL2 download failed."
-        info "Mounting SDL2 disk image..."
-        MOUNT_POINT=$(mktemp -d)
-        quietly hdiutil attach "$TMP_DMG" -mountpoint "$MOUNT_POINT"
-        mkdir -p "$SDL2_DIR"
-        XCFW_SRC=$(find "$MOUNT_POINT" -name "SDL2.xcframework" -o -name "SDL2.framework" -maxdepth 4 2>/dev/null | head -1)
-        [ -n "$XCFW_SRC" ] || error "Could not find SDL2.xcframework in the disk image. Contents:\n$(ls -la "$MOUNT_POINT")"
-        cp -R "$XCFW_SRC" "$SDL2_DIR/"
-        quietly hdiutil detach "$MOUNT_POINT"
-        rm -rf "$MOUNT_POINT" "$TMP_DMG"
-        success "SDL2 installed"
+    warn "SDL2 for iOS not found."
+    SDL2_SRC_URL="https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-2.30.3.tar.gz"
+    SDL2_SIZE=$(fetch_size "$SDL2_SRC_URL")
+    if ask_yn "Build SDL2 for iOS from source? (~$SDL2_SIZE download, a few minutes to build)"; then
+        info "Downloading SDL2 source..."
+        TMP_TAR=$(mktemp /tmp/SDL2.XXXXXX).tar.gz
+        curl -fsSL --progress-bar "$SDL2_SRC_URL" -o "$TMP_TAR" || error "SDL2 download failed."
+        info "Extracting SDL2 source..."
+        mkdir -p /tmp/sdl2-src
+        quietly tar -xzf "$TMP_TAR" -C /tmp/sdl2-src --strip-components=1
+        rm -f "$TMP_TAR"
+        info "Building SDL2 for iOS (this takes a minute)..."
+        SDL2_BUILD=$(mktemp -d /tmp/sdl2-build.XXXXXX)
+        cmake -S /tmp/sdl2-src -B "$SDL2_BUILD" \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_OSX_SYSROOT="$SYSROOT" \
+            -DSDL_SHARED=OFF \
+            -DSDL_STATIC=ON \
+            -DSDL_TEST=OFF \
+            -GXcode \
+            >"$SDL2_BUILD/cmake.log" 2>&1 \
+            || { cat "$SDL2_BUILD/cmake.log"; error "SDL2 CMake configure failed."; }
+        xcodebuild -project "$SDL2_BUILD/SDL2.xcodeproj" \
+            -target SDL2-Static \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            >"$SDL2_BUILD/build.log" 2>&1 \
+            || { tail -50 "$SDL2_BUILD/build.log"; error "SDL2 build failed."; }
+        # Assemble a minimal SDL2.framework from the static lib + headers
+        mkdir -p "$SDL2_XCFW/Headers"
+        cp -R /tmp/sdl2-src/include/. "$SDL2_XCFW/Headers/"
+        LIBSDL=$(find "$SDL2_BUILD" -name "libSDL2.a" | head -1)
+        [ -n "$LIBSDL" ] || error "SDL2 static lib not found after build."
+        cp "$LIBSDL" "$SDL2_XCFW/SDL2"
+        rm -rf /tmp/sdl2-src "$SDL2_BUILD"
+        success "SDL2 built for iOS"
     else
-        error "SDL2 is required. Download SDL2-*.dmg from https://github.com/libsdl-org/SDL/releases and place SDL2.xcframework at:\n  $SDL2_XCFW"
+        error "SDL2 is required."
     fi
 else
-    success "SDL2.xcframework: found"
+    success "SDL2: found"
 fi
 
 echo ""

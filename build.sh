@@ -184,7 +184,7 @@ if [ ! -f "$BUTTERSCOTCH_DIR/CMakeLists.txt" ]; then
         info "Cloning Butterscotch..."
         BS_ZIP=$(mktemp /tmp/butterscotch.XXXXXX.zip)
         curl -fsSL --progress-bar \
-            "https://github.com/PerfectDreams/Butterscotch/archive/refs/heads/main.zip" \
+            "https://github.com/ButterscotchRunner/Butterscotch/archive/refs/heads/main.zip" \
             -o "$BS_ZIP" || error "Failed to download Butterscotch. Check your internet connection."
         mkdir -p "$BUTTERSCOTCH_DIR"
         quietly unzip -o "$BS_ZIP" -d /tmp/bs-extract

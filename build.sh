@@ -228,7 +228,7 @@ else
 fi
 
 # --- SDL2 xcframework ---
-SDL2_XCFW="$SDL2_DIR/SDL2.xcframework"
+SDL2_XCFW="$SDL2_DIR/SDL2.framework"
 if [ ! -d "$SDL2_XCFW" ]; then
     warn "SDL2.xcframework not found."
     SDL2_URL="https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-2.30.3.dmg"
@@ -241,7 +241,7 @@ if [ ! -d "$SDL2_XCFW" ]; then
         MOUNT_POINT=$(mktemp -d)
         quietly hdiutil attach "$TMP_DMG" -mountpoint "$MOUNT_POINT"
         mkdir -p "$SDL2_DIR"
-        XCFW_SRC=$(find "$MOUNT_POINT" -name "SDL2.xcframework" -maxdepth 4 2>/dev/null | head -1)
+        XCFW_SRC=$(find "$MOUNT_POINT" -name "SDL2.xcframework" -o -name "SDL2.framework" -maxdepth 4 2>/dev/null | head -1)
         [ -n "$XCFW_SRC" ] || error "Could not find SDL2.xcframework in the disk image. Contents:\n$(ls -la "$MOUNT_POINT")"
         cp -R "$XCFW_SRC" "$SDL2_DIR/"
         quietly hdiutil detach "$MOUNT_POINT"
@@ -359,8 +359,7 @@ section "Building Butterscotch for iOS..."
 
 BUILD_DIR="$WORK_DIR/build-ios"
 SDL2_CMAKE_DIR=""
-SDL2_CMAKE_DIR=$(find "$SDL2_XCFW" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
-[ -z "$SDL2_CMAKE_DIR" ] && SDL2_CMAKE_DIR=$(find "$SDL2_DIR" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
+SDL2_CMAKE_DIR=$(find "$SDL2_DIR" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
 
 info "Configuring CMake..."
 CMAKE_OUT=$(cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \

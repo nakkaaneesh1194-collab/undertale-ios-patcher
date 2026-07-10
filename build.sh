@@ -182,17 +182,16 @@ if [ ! -f "$BUTTERSCOTCH_DIR/CMakeLists.txt" ]; then
     warn "Butterscotch source not found."
     if ask_yn "Clone Butterscotch automatically? (~30 MB)"; then
         info "Cloning Butterscotch..."
-        CLONE_LOG=$(mktemp)
-        if ! GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone --depth=1 \
-            https://github.com/PerfectDreams/Butterscotch.git "$BUTTERSCOTCH_DIR" \
-            >"$CLONE_LOG" 2>&1; then
-            $VERBOSE && cat "$CLONE_LOG" || grep -iE "error|fatal" "$CLONE_LOG" || true
-            rm -f "$CLONE_LOG"
-            error "Failed to clone Butterscotch. Check your internet connection."
-        fi
-        $VERBOSE && cat "$CLONE_LOG" || true
-        rm -f "$CLONE_LOG"
-        success "Butterscotch cloned"
+        BS_ZIP=$(mktemp /tmp/butterscotch.XXXXXX.zip)
+        curl -fsSL --progress-bar \
+            "https://github.com/PerfectDreams/Butterscotch/archive/refs/heads/main.zip" \
+            -o "$BS_ZIP" || error "Failed to download Butterscotch. Check your internet connection."
+        mkdir -p "$BUTTERSCOTCH_DIR"
+        quietly unzip -o "$BS_ZIP" -d /tmp/bs-extract
+        # zip extracts as Butterscotch-main/
+        cp -R /tmp/bs-extract/Butterscotch-main/. "$BUTTERSCOTCH_DIR/"
+        rm -rf "$BS_ZIP" /tmp/bs-extract
+        success "Butterscotch downloaded"
     else
         error "Butterscotch source is required.\n  git clone https://github.com/PerfectDreams/Butterscotch $BUTTERSCOTCH_DIR"
     fi

@@ -241,9 +241,9 @@ if [ ! -d "$SDL2_XCFW" ]; then
         MOUNT_POINT=$(mktemp -d)
         quietly hdiutil attach "$TMP_DMG" -mountpoint "$MOUNT_POINT"
         mkdir -p "$SDL2_DIR"
-        cp -R "$MOUNT_POINT"/SDL2.xcframework "$SDL2_DIR/" 2>/dev/null || \
-            cp -R "$MOUNT_POINT"/SDL2*/SDL2.xcframework "$SDL2_DIR/" 2>/dev/null || \
-            error "Could not find SDL2.xcframework in the disk image."
+        XCFW_SRC=$(find "$MOUNT_POINT" -name "SDL2.xcframework" -maxdepth 4 2>/dev/null | head -1)
+        [ -n "$XCFW_SRC" ] || error "Could not find SDL2.xcframework in the disk image. Contents:\n$(ls -la "$MOUNT_POINT")"
+        cp -R "$XCFW_SRC" "$SDL2_DIR/"
         quietly hdiutil detach "$MOUNT_POINT"
         rm -rf "$MOUNT_POINT" "$TMP_DMG"
         success "SDL2 installed"

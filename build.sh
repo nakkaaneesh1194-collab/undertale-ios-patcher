@@ -235,7 +235,7 @@ if [ ! -d "$SDL2_XCFW" ]; then
     SDL2_SIZE=$(fetch_size "$SDL2_URL")
     if ask_yn "Download SDL2 for iOS? (~$SDL2_SIZE)"; then
         info "Downloading SDL2..."
-        TMP_DMG=$(mktemp /tmp/SDL2.XXXXXX.dmg)
+        TMP_DMG=$(mktemp /tmp/SDL2.XXXXXX).dmg
         curl -L --progress-bar "$SDL2_URL" -o "$TMP_DMG" || error "SDL2 download failed."
         info "Mounting SDL2 disk image..."
         MOUNT_POINT=$(mktemp -d)

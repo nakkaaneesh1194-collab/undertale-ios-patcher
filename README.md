@@ -30,8 +30,8 @@ git clone https://github.com/nakkaaneesh1194-collab/undertale-ios-patcher
 cd undertale-ios-patcher
 
 # 2. Run the patcher
-chmod +x patch_ios.sh
-./patch_ios.sh
+chmod +x build.sh
+./build.sh
 ```
 
 The script will ask you a couple of questions. If unsure, press y.

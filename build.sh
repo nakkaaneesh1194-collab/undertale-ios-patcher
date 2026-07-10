@@ -182,7 +182,9 @@ if [ ! -f "$BUTTERSCOTCH_DIR/CMakeLists.txt" ]; then
     warn "Butterscotch source not found."
     if ask_yn "Clone Butterscotch automatically? (~30 MB)"; then
         info "Cloning Butterscotch..."
-        quietly git clone --depth=1 https://github.com/PerfectDreams/Butterscotch "$BUTTERSCOTCH_DIR" \
+        GIT_TERMINAL_PROMPT=0 git clone --depth=1 \
+            https://github.com/PerfectDreams/Butterscotch.git "$BUTTERSCOTCH_DIR" \
+            2>&1 | { $VERBOSE && cat || grep -iE "error|fatal|Cloning" || true; } \
             || error "Failed to clone Butterscotch. Check your internet connection."
         success "Butterscotch cloned"
     else

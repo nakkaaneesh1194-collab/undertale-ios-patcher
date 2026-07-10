@@ -182,7 +182,7 @@ if [ ! -f "$BUTTERSCOTCH_DIR/CMakeLists.txt" ]; then
     warn "Butterscotch source not found."
     if ask_yn "Clone Butterscotch automatically? (~30 MB)"; then
         info "Cloning Butterscotch..."
-        BS_ZIP=$(mktemp /tmp/butterscotch.XXXXXX.zip)
+        BS_ZIP=$(mktemp /tmp/butterscotch.XXXXXX).zip
         curl -fsSL --progress-bar \
             "https://github.com/ButterscotchRunner/Butterscotch/archive/refs/heads/main.zip" \
             -o "$BS_ZIP" || error "Failed to download Butterscotch. Check your internet connection."

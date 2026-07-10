@@ -243,8 +243,11 @@ if [ ! -d "$SDL2_XCFW" ]; then
             -GXcode \
             >"$SDL2_BUILD/cmake.log" 2>&1 \
             || { cat "$SDL2_BUILD/cmake.log"; error "SDL2 CMake configure failed."; }
+        SDL2_TARGET=$(xcodebuild -project "$SDL2_BUILD/SDL2.xcodeproj" -list 2>/dev/null | grep -i "static" | head -1 | xargs)
+        [ -n "$SDL2_TARGET" ] || SDL2_TARGET="SDL2-static"
+        info "Building SDL2 target: $SDL2_TARGET"
         xcodebuild -project "$SDL2_BUILD/SDL2.xcodeproj" \
-            -target SDL2-Static \
+            -target "$SDL2_TARGET" \
             -configuration Release \
             -sdk iphoneos \
             CODE_SIGNING_ALLOWED=NO \

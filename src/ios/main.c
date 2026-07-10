@@ -42,7 +42,9 @@
 #endif
 #include "noop_audio_system.h"
 
-#include "gl/gl_renderer.h"
+#include "gl/gl_renderer.h"   /* types: GLRenderer, GLRenderer_create, etc. */
+/* Note: gl_renderer.h is patched by patch_cmake.py to guard glad/glad.h with
+ * PLATFORM_IOS, so on iOS it includes <OpenGLES/ES3/gl.h> instead. */
 
 /* Shared platformdefs symbols required by main.c */
 #include "ios/platformdefs.h"

@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-# Patches Butterscotch's CMakeLists.txt to add iOS support.
+# Patches Butterscotch source files to add iOS support.
 # Safe to run multiple times (checks if already patched).
+#
+# Patched files:
+#   CMakeLists.txt  — adds ios platform block
+#   src/gl/gl_renderer.h — adds PLATFORM_IOS to the GLES guard
 
-import sys, re
+import sys, re, os
 
 if len(sys.argv) != 2:
     print("Usage: patch_cmake.py <path/to/CMakeLists.txt>")
@@ -82,3 +86,26 @@ with open(path, "w") as f:
     f.write(src)
 
 print("CMakeLists.txt patched for iOS.")
+
+# ── Patch src/gl/gl_renderer.h ──────────────────────────────────────────────
+# gl_renderer.h already guards glad for __EMSCRIPTEN__ and __ANDROID__.
+# We add PLATFORM_IOS to that guard so it uses <OpenGLES/ES3/gl.h> on iOS too.
+gl_renderer_h = os.path.join(os.path.dirname(path), "src", "gl", "gl_renderer.h")
+if not os.path.exists(gl_renderer_h):
+    print(f"Warning: {gl_renderer_h} not found — skipping GLES guard patch.")
+else:
+    with open(gl_renderer_h, "r") as f:
+        hsrc = f.read()
+
+    OLD_GUARD = '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)\n#include <GLES3/gl3.h>\n#else\n#include <glad/glad.h>\n#endif'
+    NEW_GUARD = '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(PLATFORM_IOS)\n#include <OpenGLES/ES3/gl.h>\n#include <OpenGLES/ES3/glext.h>\n#else\n#include <glad/glad.h>\n#endif'
+
+    if 'PLATFORM_IOS' in hsrc:
+        print("gl_renderer.h already patched.")
+    elif OLD_GUARD not in hsrc:
+        print(f"Warning: expected GLES guard not found in {gl_renderer_h} — skipping.")
+    else:
+        hsrc = hsrc.replace(OLD_GUARD, NEW_GUARD)
+        with open(gl_renderer_h, "w") as f:
+            f.write(hsrc)
+        print("gl_renderer.h patched for iOS (OpenGLES guard added).")

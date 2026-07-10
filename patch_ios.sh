@@ -5,19 +5,30 @@
 #
 #  Usage:
 #    ./patch_ios.sh [path/to/Undertale/install/folder]
+#    ./patch_ios.sh -v   (verbose — shows full output from tools)
 #
 #  Requirements (auto-installed if missing):
 #    - Xcode (for iOS SDK + clang)
 #    - cmake
 #    - UndertaleModCli (for data.win patching)
 #    - SDL2 (downloaded automatically)
-#    - Butterscotch source (bundled with this script or in ./Butterscotch/)
+#    - Butterscotch source (cloned automatically)
 #
 #  Output:
 #    Undertale_patched.ipa  (ready for LiveContainer or AltStore)
 # ============================================================
 
 set -e
+
+# ---- Verbose flag ----
+VERBOSE=false
+INSTALL_DIR_ARG=""
+for arg in "$@"; do
+    case "$arg" in
+        -v|--verbose) VERBOSE=true ;;
+        *) INSTALL_DIR_ARG="$arg" ;;
+    esac
+done
 
 # ---- Colors ----
 RED='\033[0;31m'
@@ -36,6 +47,7 @@ echo "  ║     Undertale iOS Patcher  v2.0          ║"
 echo "  ║   Butterscotch + GCVirtualController     ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
+$VERBOSE && echo -e "  ${YELLOW}Verbose mode on${NC}\n"
 
 # ---- Helpers ----
 info()    { echo -e "  ${CYAN}→${NC} $1"; }
@@ -43,6 +55,15 @@ success() { echo -e "  ${GREEN}✓${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}⚠${NC}  $1"; }
 error()   { echo -e "\n  ${RED}✗ Error:${NC} $1\n"; exit 1; }
 section() { echo -e "\n${BOLD}$1${NC}"; }
+
+# Run a command, hiding output unless -v
+quietly() {
+    if $VERBOSE; then
+        "$@"
+    else
+        "$@" &>/dev/null
+    fi
+}
 
 ask_yn() {
     local prompt="$1" default="${2:-y}"
@@ -91,12 +112,14 @@ success "iOS SDK: $(basename "$SYSROOT")"
 # --- cmake ---
 if ! command -v cmake &>/dev/null; then
     warn "cmake not found."
-    CMAKE_SIZE=$(fetch_size "https://github.com/Kitware/CMake/releases/latest")
-    if ask_yn "Install cmake via Homebrew? (~10 MB)"; then
+    if ask_yn "Install cmake via Homebrew? (~20 MB)"; then
         if ! command -v brew &>/dev/null; then
             error "Homebrew not found. Install it from https://brew.sh then re-run."
         fi
-        brew install cmake
+        info "Installing cmake..."
+        HOMEBREW_NO_AUTO_UPDATE=1 quietly brew install --quiet cmake \
+            || error "Failed to install cmake via Homebrew."
+        success "cmake installed"
     else
         error "cmake is required. Install it from https://cmake.org or via Homebrew."
     fi
@@ -106,19 +129,36 @@ success "cmake: $(cmake --version | head -1)"
 # --- UndertaleModCli ---
 if [ ! -x "$UTMT_BIN" ]; then
     warn "UndertaleModCli not found."
-    UTMT_URL="https://github.com/UnderminersTeam/UndertaleModTool/releases/download/0.9.1.1/UndertaleModCli_macOS.tar.gz"
-    UTMT_SIZE=$(fetch_size "$UTMT_URL")
+    # Try .zip (macOS) first, fall back to .tar.gz (Linux)
+    UTMT_BASE="https://github.com/UnderminersTeam/UndertaleModTool/releases/download/0.9.1.1"
+    UTMT_URL_ZIP="$UTMT_BASE/UndertaleModCli_macOS.zip"
+    UTMT_URL_TAR="$UTMT_BASE/UndertaleModCli_Ubuntu.tar.gz"
+    UTMT_SIZE=$(fetch_size "$UTMT_URL_ZIP")
+    [ "$UTMT_SIZE" = "unknown size" ] && UTMT_SIZE=$(fetch_size "$UTMT_URL_TAR")
     if ask_yn "Download UndertaleModCli? (~$UTMT_SIZE)"; then
         info "Downloading UndertaleModCli..."
         mkdir -p "$UTMT_DIR"
-        TMP_TAR=$(mktemp /tmp/utmt.XXXXXX.tar.gz)
-        curl -L --progress-bar "$UTMT_URL" -o "$TMP_TAR" || error "Download failed."
-        tar -xzf "$TMP_TAR" -C "$UTMT_DIR" --strip-components=1 2>/dev/null || tar -xzf "$TMP_TAR" -C "$UTMT_DIR"
-        rm -f "$TMP_TAR"
+        TMP_FILE=$(mktemp /tmp/utmt.XXXXXX)
+        # Try .zip first
+        if curl -sf -L --progress-bar "$UTMT_URL_ZIP" -o "${TMP_FILE}.zip" 2>/dev/null && \
+           [ -s "${TMP_FILE}.zip" ]; then
+            info "Extracting..."
+            quietly unzip -o "${TMP_FILE}.zip" -d "$UTMT_DIR"
+            rm -f "${TMP_FILE}.zip"
+        else
+            # Fall back to .tar.gz
+            curl -L --progress-bar "$UTMT_URL_TAR" -o "${TMP_FILE}.tar.gz" || error "Download failed."
+            info "Extracting..."
+            quietly tar -xzf "${TMP_FILE}.tar.gz" -C "$UTMT_DIR" --strip-components=1
+            rm -f "${TMP_FILE}.tar.gz"
+        fi
+        rm -f "$TMP_FILE"
+        # Find and link the binary wherever it ended up
         chmod +x "$UTMT_BIN" 2>/dev/null || true
         if [ ! -x "$UTMT_BIN" ]; then
             FOUND=$(find "$UTMT_DIR" -name "UndertaleModCli" -type f | head -1)
-            [ -n "$FOUND" ] && ln -sf "$FOUND" "$UTMT_BIN" || error "UndertaleModCli binary not found after extraction."
+            [ -n "$FOUND" ] && chmod +x "$FOUND" && ln -sf "$FOUND" "$UTMT_BIN" \
+                || error "UndertaleModCli binary not found after extraction."
         fi
         success "UndertaleModCli installed"
     else
@@ -138,7 +178,7 @@ if [ ! -f "$BUTTERSCOTCH_DIR/CMakeLists.txt" ]; then
     warn "Butterscotch source not found."
     if ask_yn "Clone Butterscotch automatically? (~30 MB)"; then
         info "Cloning Butterscotch..."
-        git clone --depth=1 https://github.com/PerfectDreams/Butterscotch "$BUTTERSCOTCH_DIR" \
+        quietly git clone --depth=1 https://github.com/PerfectDreams/Butterscotch "$BUTTERSCOTCH_DIR" \
             || error "Failed to clone Butterscotch. Check your internet connection."
         success "Butterscotch cloned"
     else
@@ -153,11 +193,10 @@ IOS_MARKER="$BUTTERSCOTCH_DIR/src/ios/main.c"
 if [ ! -f "$IOS_MARKER" ]; then
     info "Applying iOS patch to Butterscotch..."
 
-    # Apply CMakeLists.patch
     if [ -f "$SCRIPT_DIR/CMakeLists.patch" ]; then
         cd "$BUTTERSCOTCH_DIR"
         if git apply --check "$SCRIPT_DIR/CMakeLists.patch" &>/dev/null; then
-            git apply "$SCRIPT_DIR/CMakeLists.patch" \
+            quietly git apply "$SCRIPT_DIR/CMakeLists.patch" \
                 || error "Failed to apply CMakeLists.patch."
         else
             warn "CMakeLists.patch did not apply cleanly — Butterscotch may have updated."
@@ -168,7 +207,6 @@ if [ ! -f "$IOS_MARKER" ]; then
         error "CMakeLists.patch not found next to patch_ios.sh."
     fi
 
-    # Copy src/ios/ platform files
     mkdir -p "$BUTTERSCOTCH_DIR/src/ios"
     cp "$SCRIPT_DIR/src/ios/"* "$BUTTERSCOTCH_DIR/src/ios/" \
         || error "Failed to copy src/ios/ into Butterscotch."
@@ -190,14 +228,14 @@ if [ ! -d "$SDL2_XCFW" ]; then
         curl -L --progress-bar "$SDL2_URL" -o "$TMP_DMG" || error "SDL2 download failed."
         info "Mounting SDL2 disk image..."
         MOUNT_POINT=$(mktemp -d)
-        hdiutil attach "$TMP_DMG" -mountpoint "$MOUNT_POINT" -quiet
+        quietly hdiutil attach "$TMP_DMG" -mountpoint "$MOUNT_POINT"
         mkdir -p "$SDL2_DIR"
         cp -R "$MOUNT_POINT"/SDL2.xcframework "$SDL2_DIR/" 2>/dev/null || \
             cp -R "$MOUNT_POINT"/SDL2*/SDL2.xcframework "$SDL2_DIR/" 2>/dev/null || \
             error "Could not find SDL2.xcframework in the disk image."
-        hdiutil detach "$MOUNT_POINT" -quiet
+        quietly hdiutil detach "$MOUNT_POINT"
         rm -rf "$MOUNT_POINT" "$TMP_DMG"
-        success "SDL2 installed → $SDL2_XCFW"
+        success "SDL2 installed"
     else
         error "SDL2 is required. Download SDL2-*.dmg from https://github.com/libsdl-org/SDL/releases and place SDL2.xcframework at:\n  $SDL2_XCFW"
     fi
@@ -212,9 +250,8 @@ echo ""
 # ============================================================
 section "Input files"
 
-INSTALL_DIR="${1:-}"
+INSTALL_DIR="$INSTALL_DIR_ARG"
 if [ -z "$INSTALL_DIR" ]; then
-    # Try common Steam install locations on Mac
     STEAM_CANDIDATES=(
         "$HOME/Library/Application Support/Steam/steamapps/common/Undertale"
         "$HOME/Library/Application Support/Steam/steamapps/common/UNDERTALE"
@@ -232,11 +269,9 @@ if [ -z "$INSTALL_DIR" ]; then
     fi
 fi
 
-# Strip trailing slash
 INSTALL_DIR="${INSTALL_DIR%/}"
 [ -d "$INSTALL_DIR" ] || error "Folder not found: $INSTALL_DIR"
 
-# Find data.win inside the install folder
 DATAWIN=""
 for candidate in "$INSTALL_DIR/data.win" "$INSTALL_DIR/game.ios" "$INSTALL_DIR/assets/data.win"; do
     if [ -f "$candidate" ]; then
@@ -246,7 +281,7 @@ for candidate in "$INSTALL_DIR/data.win" "$INSTALL_DIR/game.ios" "$INSTALL_DIR/a
 done
 [ -n "$DATAWIN" ] || error "Could not find data.win in: $INSTALL_DIR"
 success "Install folder: $INSTALL_DIR"
-success "data.win: $DATAWIN"
+success "data.win: $(basename "$DATAWIN")"
 echo ""
 
 # ============================================================
@@ -254,13 +289,10 @@ echo ""
 # ============================================================
 section "Options"
 
-USE_DPAD=true
 USE_THUMBSTICK_FLAG=""
 if ask_yn "Use D-Pad for movement? (No = analog thumbstick)" y; then
-    USE_DPAD=true
     success "Input: D-Pad"
 else
-    USE_DPAD=false
     USE_THUMBSTICK_FLAG="-DVIRTUAL_CONTROLLER_THUMBSTICK=ON"
     warn "Input: Analog thumbstick"
 fi
@@ -292,8 +324,12 @@ PATCHES_DIR="$SCRIPT_DIR/patches"
 run_patch() {
     local script="$1" label="$2"
     info "Applying $label..."
-    "$UTMT_BIN" load "$PATCHED_DATAWIN" -s "$script" -o "$PATCHED_DATAWIN" 2>&1 \
-        | grep -v "^\[MESSAGE\]" | grep -v "^$" || true
+    if $VERBOSE; then
+        "$UTMT_BIN" load "$PATCHED_DATAWIN" -s "$script" -o "$PATCHED_DATAWIN"
+    else
+        "$UTMT_BIN" load "$PATCHED_DATAWIN" -s "$script" -o "$PATCHED_DATAWIN" 2>&1 \
+            | grep -v "^\[MESSAGE\]" | grep -iE "error:|failed" || true
+    fi
 }
 
 run_patch "$PATCHES_DIR/01_jch_init.csx"       "01 — j_ch init"
@@ -301,10 +337,7 @@ run_patch "$PATCHES_DIR/02_jch_rescan.csx"     "02 — j_ch rescan"
 run_patch "$PATCHES_DIR/03_control_update.csx" "03 — control_update device index"
 run_patch "$PATCHES_DIR/04_dpad_hold.csx"      "04 — d-pad hold"
 run_patch "$PATCHES_DIR/05_title_screen.csx"   "05 — title screen button check"
-
-if $DEBUG_OVERLAY; then
-    run_patch "$PATCHES_DIR/06_debug_overlay.csx" "06 — debug overlay"
-fi
+$DEBUG_OVERLAY && run_patch "$PATCHES_DIR/06_debug_overlay.csx" "06 — debug overlay"
 
 success "data.win patched"
 
@@ -314,17 +347,12 @@ success "data.win patched"
 section "Building Butterscotch for iOS..."
 
 BUILD_DIR="$WORK_DIR/build-ios"
-SDL2_CMAKE_DIR="$SDL2_XCFW/ios-arm64/SDL2.framework/Resources/CMake"
-# Fallback cmake dir paths for different SDL2 xcframework layouts
-if [ ! -d "$SDL2_CMAKE_DIR" ]; then
-    SDL2_CMAKE_DIR=$(find "$SDL2_XCFW" -name "SDL2Config.cmake" -o -name "sdl2-config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || echo "")
-fi
-if [ ! -d "$SDL2_CMAKE_DIR" ]; then
-    SDL2_CMAKE_DIR=$(find "$SDL2_DIR" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || echo "")
-fi
+SDL2_CMAKE_DIR=""
+SDL2_CMAKE_DIR=$(find "$SDL2_XCFW" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
+[ -z "$SDL2_CMAKE_DIR" ] && SDL2_CMAKE_DIR=$(find "$SDL2_DIR" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
 
 info "Configuring CMake..."
-cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
+CMAKE_OUT=$(cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     -DPLATFORM=ios \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -338,43 +366,38 @@ cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     ${USE_THUMBSTICK_FLAG} \
     ${SDL2_CMAKE_DIR:+-DSDL2_DIR="$SDL2_CMAKE_DIR"} \
     -DCMAKE_BUILD_TYPE=Release \
-    -GXcode \
-    2>&1 | tail -5
+    -GXcode 2>&1)
+if $VERBOSE; then echo "$CMAKE_OUT"; else echo "$CMAKE_OUT" | grep -iE "error:|warning:|Configuring" | tail -3; fi
 
 info "Compiling (this may take a few minutes)..."
-cmake --build "$BUILD_DIR" \
+BUILD_OUT=$(cmake --build "$BUILD_DIR" \
     --config Release \
     -- \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_IDENTITY="" \
-    2>&1 | grep -E "error:|warning:|Build succeeded|FAILED" | tail -20
+    CODE_SIGN_IDENTITY="" 2>&1)
+if $VERBOSE; then echo "$BUILD_OUT"; else echo "$BUILD_OUT" | grep -iE "error:|Build succeeded|FAILED" | tail -5; fi
 
 APP_PATH=$(find "$BUILD_DIR" -name "butterscotch.app" -type d | head -1)
-[ -n "$APP_PATH" ] || error "Build failed — butterscotch.app not found in $BUILD_DIR"
-success "Built: $APP_PATH"
+[ -n "$APP_PATH" ] || error "Build failed — butterscotch.app not found.\nRun with -v for full output."
+success "Build complete"
 
 # ============================================================
 # BUNDLE GAME FILES INTO APP
 # ============================================================
 section "Bundling game files..."
 
-# Copy all game assets from the install folder into the .app bundle,
-# then overwrite data.win with the patched version.
-#
-# Undertale's install contains: data.win, audiogroup*.dat, *.ogg audio,
-# fonts, splash images, etc. We copy everything except the Mac .app wrapper
-# itself and any platform-specific executables.
-info "Copying game assets from install folder..."
-rsync -a --exclude="*.app" --exclude="*.exe" --exclude="*.dll" \
-    --exclude="*.sh" --exclude=".DS_Store" \
-    "$INSTALL_DIR/" "$APP_PATH/" \
-    2>/dev/null || \
-cp -R "$INSTALL_DIR"/. "$APP_PATH/"
-
-# Overwrite data.win with patched version
+info "Copying game assets..."
+if command -v rsync &>/dev/null; then
+    quietly rsync -a \
+        --exclude="*.app" --exclude="*.exe" --exclude="*.dll" \
+        --exclude="*.sh" --exclude=".DS_Store" \
+        "$INSTALL_DIR/" "$APP_PATH/"
+else
+    cp -R "$INSTALL_DIR"/. "$APP_PATH/"
+fi
 cp "$PATCHED_DATAWIN" "$APP_PATH/data.win"
-success "Game assets bundled → $(basename "$APP_PATH")"
+success "Game assets bundled"
 
 # ============================================================
 # PACKAGE AS IPA
@@ -384,13 +407,11 @@ section "Packaging IPA..."
 IPA_WORK="$WORK_DIR/ipa"
 mkdir -p "$IPA_WORK/Payload"
 cp -R "$APP_PATH" "$IPA_WORK/Payload/"
-(cd "$IPA_WORK" && zip -qr "$IPA_OUT" Payload)
+(cd "$IPA_WORK" && quietly zip -r "$IPA_OUT" Payload)
 
 success "IPA → $IPA_OUT"
-IPA_SIZE=$(du -sh "$IPA_OUT" | cut -f1)
-info "Size: $IPA_SIZE"
+info "Size: $(du -sh "$IPA_OUT" | cut -f1)"
 
-# ---- Cleanup ----
 rm -rf "$WORK_DIR"
 
 # ============================================================
@@ -402,11 +423,7 @@ echo ""
 echo -e "  Patched IPA: ${BOLD}$IPA_OUT${NC}"
 echo ""
 echo "  Next steps:"
-echo "   1. Sign the IPA with AltStore, Sideloadly, or your developer cert"
-echo "   2. Import the signed IPA into LiveContainer"
-echo "   3. Launch Undertale — the virtual controller appears automatically"
+echo "   1. Sign the IPA with AltStore, SideStore, or Sideloadly"
+echo "   2. Or load directly in LiveContainer (no signing needed)"
+echo "   3. Launch — the virtual controller appears automatically"
 echo ""
-echo -e "  ${YELLOW}Note:${NC} No dylib injection needed — GCVirtualController is"
-echo "  built directly into Butterscotch."
-echo ""
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  

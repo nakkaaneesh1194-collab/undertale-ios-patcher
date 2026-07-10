@@ -55,12 +55,11 @@ IOS_BLOCK = '''elseif(PLATFORM STREQUAL "ios")
     if(VIRTUAL_CONTROLLER_THUMBSTICK)
         add_compile_definitions(VIRTUAL_CONTROLLER_THUMBSTICK)
     endif()
-    # SDL2
-    find_package(SDL2 REQUIRED)
-    target_include_directories(butterscotch PRIVATE ${SDL2_INCLUDE_DIRS})
+    # SDL2 — passed in via -DSDL2_FRAMEWORK_PATH (no SDL2Config.cmake in iOS DMG)
+    target_include_directories(butterscotch PRIVATE "${SDL2_FRAMEWORK_PATH}/Headers")
     # iOS frameworks
     target_link_libraries(butterscotch PRIVATE
-        ${SDL2_LIBRARIES}
+        "${SDL2_FRAMEWORK_PATH}/SDL2"
         "-framework UIKit"
         "-framework GameController"
         "-framework CoreMotion"

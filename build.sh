@@ -348,8 +348,7 @@ success "data.win patched"
 section "Building Butterscotch for iOS..."
 
 BUILD_DIR="$WORK_DIR/build-ios"
-SDL2_CMAKE_DIR=""
-SDL2_CMAKE_DIR=$(find "$SDL2_DIR" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
+SDL2_FRAMEWORK_PATH="$SDL2_XCFW"
 
 info "Configuring CMake..."
 CMAKE_LOG=$(mktemp /tmp/cmake-configure.XXXXXX)
@@ -365,7 +364,7 @@ cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     -DENABLE_LEGACY_GL=OFF \
     -DENABLE_MODERN_GL=ON \
     ${USE_THUMBSTICK_FLAG} \
-    ${SDL2_CMAKE_DIR:+-DSDL2_DIR="$SDL2_CMAKE_DIR"} \
+    -DSDL2_FRAMEWORK_PATH="$SDL2_FRAMEWORK_PATH" \
     -DCMAKE_BUILD_TYPE=Release \
     -GXcode >"$CMAKE_LOG" 2>&1 \
     || { cat "$CMAKE_LOG"; rm -f "$CMAKE_LOG"; error "CMake configure failed."; }

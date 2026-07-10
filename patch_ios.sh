@@ -44,7 +44,7 @@ echo ""
 echo -e "${CYAN}${BOLD}"
 echo "  ╔══════════════════════════════════════════╗"
 echo "  ║     Undertale iOS Patcher  v2.0          ║"
-echo "  ║   Butterscotch + GCVirtualController     ║"
+echo "  ║                                          ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo -e "${NC}"
 $VERBOSE && echo -e "  ${YELLOW}Verbose mode on${NC}\n"
@@ -131,8 +131,8 @@ if [ ! -x "$UTMT_BIN" ]; then
     warn "UndertaleModCli not found."
     # Try .zip (macOS) first, fall back to .tar.gz (Linux)
     UTMT_BASE="https://github.com/UnderminersTeam/UndertaleModTool/releases/download/0.9.1.1"
-    UTMT_URL_ZIP="$UTMT_BASE/UndertaleModCli_macOS.zip"
-    UTMT_URL_TAR="$UTMT_BASE/UndertaleModCli_Ubuntu.tar.gz"
+    UTMT_URL_ZIP="$UTMT_BASE/UTMT_CLI_v0.9.1.1-macOS.zip"
+    UTMT_URL_TAR="$UTMT_BASE/UTMT_CLI_v0.9.1.1-Linux.tar.gz"
     UTMT_SIZE=$(fetch_size "$UTMT_URL_ZIP")
     [ "$UTMT_SIZE" = "unknown size" ] && UTMT_SIZE=$(fetch_size "$UTMT_URL_TAR")
     if ask_yn "Download UndertaleModCli? (~$UTMT_SIZE)"; then
@@ -153,12 +153,16 @@ if [ ! -x "$UTMT_BIN" ]; then
             rm -f "${TMP_FILE}.tar.gz"
         fi
         rm -f "$TMP_FILE"
-        # Find and link the binary wherever it ended up
+        # Find the binary — it may be nested or named differently
         chmod +x "$UTMT_BIN" 2>/dev/null || true
         if [ ! -x "$UTMT_BIN" ]; then
-            FOUND=$(find "$UTMT_DIR" -name "UndertaleModCli" -type f | head -1)
+            FOUND=$(find "$UTMT_DIR" -name "UndertaleModCli" -not -name "*.dll" -not -name "*.so" -type f | head -1)
+            if [ -z "$FOUND" ]; then
+                # Sometimes the zip extracts a folder with the version in the name
+                FOUND=$(find "$UTMT_DIR" -maxdepth 3 -type f -perm +111 -name "UndertaleModCli*" | head -1)
+            fi
             [ -n "$FOUND" ] && chmod +x "$FOUND" && ln -sf "$FOUND" "$UTMT_BIN" \
-                || error "UndertaleModCli binary not found after extraction."
+                || error "UndertaleModCli binary not found after extraction. Run with -v for details."
         fi
         success "UndertaleModCli installed"
     else

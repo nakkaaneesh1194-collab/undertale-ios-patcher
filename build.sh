@@ -230,7 +230,7 @@ fi
 # --- SDL2 xcframework ---
 SDL2_XCFW="$SDL2_DIR/SDL2.framework"
 if [ ! -d "$SDL2_XCFW" ]; then
-    warn "SDL2.xcframework not found."
+    warn "SDL2.framework not found."
     SDL2_URL="https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-2.30.3.dmg"
     SDL2_SIZE=$(fetch_size "$SDL2_URL")
     if ask_yn "Download SDL2 for iOS? (~$SDL2_SIZE)"; then
@@ -281,6 +281,7 @@ if [ -z "$INSTALL_DIR" ]; then
 fi
 
 INSTALL_DIR="${INSTALL_DIR%/}"
+INSTALL_DIR="${INSTALL_DIR/#\~/$HOME}"
 [ -d "$INSTALL_DIR" ] || error "Folder not found: $INSTALL_DIR"
 
 DATAWIN=""

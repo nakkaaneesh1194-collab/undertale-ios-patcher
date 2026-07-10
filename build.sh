@@ -204,19 +204,8 @@ IOS_MARKER="$BUTTERSCOTCH_DIR/src/ios/main.c"
 if [ ! -f "$IOS_MARKER" ]; then
     info "Applying iOS patch to Butterscotch..."
 
-    if [ -f "$SCRIPT_DIR/CMakeLists.patch" ]; then
-        cd "$BUTTERSCOTCH_DIR"
-        if git apply --check "$SCRIPT_DIR/CMakeLists.patch" &>/dev/null; then
-            quietly git apply "$SCRIPT_DIR/CMakeLists.patch" \
-                || error "Failed to apply CMakeLists.patch."
-        else
-            warn "CMakeLists.patch did not apply cleanly — Butterscotch may have updated."
-            warn "You may need to manually apply CMakeLists.patch to Butterscotch/CMakeLists.txt."
-        fi
-        cd "$SCRIPT_DIR"
-    else
-        error "CMakeLists.patch not found next to patch_ios.sh."
-    fi
+    python3 "$SCRIPT_DIR/src/ios/patch_cmake.py" "$BUTTERSCOTCH_DIR/CMakeLists.txt" \
+        || error "Failed to patch Butterscotch CMakeLists.txt."
 
     mkdir -p "$BUTTERSCOTCH_DIR/src/ios"
     cp "$SCRIPT_DIR/src/ios/"* "$BUTTERSCOTCH_DIR/src/ios/" \

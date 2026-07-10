@@ -363,7 +363,8 @@ SDL2_CMAKE_DIR=""
 SDL2_CMAKE_DIR=$(find "$SDL2_DIR" -name "SDL2Config.cmake" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
 
 info "Configuring CMake..."
-CMAKE_OUT=$(cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
+CMAKE_LOG=$(mktemp /tmp/cmake-configure.XXXXXX)
+cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     -DPLATFORM=ios \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -377,17 +378,22 @@ CMAKE_OUT=$(cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     ${USE_THUMBSTICK_FLAG} \
     ${SDL2_CMAKE_DIR:+-DSDL2_DIR="$SDL2_CMAKE_DIR"} \
     -DCMAKE_BUILD_TYPE=Release \
-    -GXcode 2>&1)
-if $VERBOSE; then echo "$CMAKE_OUT"; else echo "$CMAKE_OUT" | grep -iE "error:|warning:|Configuring" | tail -3; fi
+    -GXcode >"$CMAKE_LOG" 2>&1 \
+    || { cat "$CMAKE_LOG"; rm -f "$CMAKE_LOG"; error "CMake configure failed."; }
+$VERBOSE && cat "$CMAKE_LOG" || grep -iE "error:|warning:" "$CMAKE_LOG" | tail -5 || true
+rm -f "$CMAKE_LOG"
 
 info "Compiling (this may take a few minutes)..."
-BUILD_OUT=$(cmake --build "$BUILD_DIR" \
+BUILD_LOG=$(mktemp /tmp/cmake-build.XXXXXX)
+cmake --build "$BUILD_DIR" \
     --config Release \
     -- \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_IDENTITY="" 2>&1)
-if $VERBOSE; then echo "$BUILD_OUT"; else echo "$BUILD_OUT" | grep -iE "error:|Build succeeded|FAILED" | tail -5; fi
+    CODE_SIGN_IDENTITY="" >"$BUILD_LOG" 2>&1 \
+    || { cat "$BUILD_LOG"; rm -f "$BUILD_LOG"; error "Build failed."; }
+$VERBOSE && cat "$BUILD_LOG" || grep -iE "error:|Build succeeded|FAILED" "$BUILD_LOG" | tail -5 || true
+rm -f "$BUILD_LOG"
 
 APP_PATH=$(find "$BUILD_DIR" -name "butterscotch.app" -type d | head -1)
 [ -n "$APP_PATH" ] || error "Build failed — butterscotch.app not found.\nRun with -v for full output."

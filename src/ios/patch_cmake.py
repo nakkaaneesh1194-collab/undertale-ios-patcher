@@ -92,13 +92,24 @@ endif()"""
     endif()
     # SDL2 — passed in via -DSDL2_FRAMEWORK_PATH (no SDL2Config.cmake in iOS DMG)
     target_include_directories(butterscotch PRIVATE "${SDL2_FRAMEWORK_PATH}/Headers")
+    # libSDL2main.a provides the real main() that calls UIApplicationMain;
+    # SDL_main.h #defines main -> SDL_main so our main.c is the entry point.
+    find_library(SDL2MAIN_LIB SDL2main
+        PATHS "${SDL2_FRAMEWORK_PATH}"
+        NO_DEFAULT_PATH
+    )
     # iOS frameworks
     target_link_libraries(butterscotch PRIVATE
         "${SDL2_FRAMEWORK_PATH}/SDL2"
+        ${SDL2MAIN_LIB}
         "-framework UIKit"
         "-framework GameController"
         "-framework CoreMotion"
         "-framework CoreGraphics"
+        "-framework CoreBluetooth"
+        "-framework CoreHaptics"
+        "-framework QuartzCore"
+        "-framework Metal"
         "-framework OpenGLES"
         "-framework AVFoundation"
         "-framework AudioToolbox"

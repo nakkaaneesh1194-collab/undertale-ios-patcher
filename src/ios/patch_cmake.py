@@ -65,6 +65,9 @@ if(PLATFORM STREQUAL "ios")
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_GUI_IDENTIFIER "org.butterscotch.Undertale"
         MACOSX_BUNDLE_BUNDLE_NAME "Undertale"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/src/ios/Info.plist.in"
     )
 endif()"""
     )

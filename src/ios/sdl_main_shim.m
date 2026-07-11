@@ -1,20 +1,20 @@
 /*
  * sdl_main_shim.m — iOS entry point for Butterscotch.
  *
- * SDL_main.h renames "main" to "SDL_main" in every translation unit that
- * includes it.  The real main() that calls UIApplicationMain is normally
- * supplied by libSDL2main.a, but the iOS framework DMG doesn't ship that
- * file.  We provide it here instead.
+ * SDL_main.h renames "main" -> "SDL_main" in every TU that includes it.
+ * SDL_UIKit_RunApp() is the SDL2 static-framework way to bootstrap UIKit:
+ * it creates SDLUIKitDelegate (via ObjC runtime internals, not a string
+ * lookup), sets up the run-loop, then calls our SDL_main.
  *
- * SDLUIKitDelegate (inside SDL2.framework) sets up the UIKit run-loop and
- * then calls our SDL_main (i.e. the renamed main() in main.c) once the app
- * is ready.
+ * Do NOT include SDL_main.h here — we need the real "main" symbol.
  */
-#import <UIKit/UIKit.h>
 
-/* Do NOT include SDL_main.h here — we want the real symbol name "main". */
+/* Forward-declare SDL_UIKit_RunApp so we don't need SDL headers. */
+extern int SDL_UIKit_RunApp(int argc, char *argv[], void *mainFunction);
+
+/* Forward-declare the renamed entry point from main.c. */
+extern int SDL_main(int argc, char *argv[]);
+
 int main(int argc, char *argv[]) {
-    @autoreleasepool {
-        return UIApplicationMain(argc, argv, nil, @"SDLUIKitDelegate");
-    }
+    return SDL_UIKit_RunApp(argc, argv, SDL_main);
 }

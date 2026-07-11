@@ -88,6 +88,10 @@ endif()"""
     target_include_directories(butterscotch PRIVATE ${CMAKE_SOURCE_DIR}/src/gl_common)
     target_include_directories(butterscotch PRIVATE ${CMAKE_SOURCE_DIR}/src/image)
     add_compile_definitions(ENABLE_GLES PLATFORM_IOS USE_SDL2 GLES_SILENCE_DEPRECATION)
+    # -ObjC forces the linker to load all ObjC class implementations from
+    # static libraries/frameworks, preventing SDLUIKitDelegate's methods
+    # from being dead-stripped. Set both ways to ensure it takes effect.
+    target_link_options(butterscotch PRIVATE -ObjC)
     set_target_properties(butterscotch PROPERTIES
         XCODE_ATTRIBUTE_OTHER_LDFLAGS "-ObjC"
     )

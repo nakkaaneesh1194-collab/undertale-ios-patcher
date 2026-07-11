@@ -17,6 +17,14 @@
 
 #import <UIKit/UIKit.h>
 
+/* Force the linker to include SDLUIKitDelegate's object file from the
+ * SDL2 static framework. Without this, the linker dead-strips the class's
+ * method implementations even with -ObjC, because SDL2 is a static lib
+ * wrapped in a .framework rather than a plain .a file.
+ * This extern creates a direct symbol reference at compile time. */
+extern id OBJC_CLASS_$_SDLUIKitDelegate;
+__attribute__((used)) static void *_forceSDLUIKitDelegate = &OBJC_CLASS_$_SDLUIKitDelegate;
+
 int main(int argc, char *argv[]) {
     @autoreleasepool {
         return UIApplicationMain(argc, argv, nil, @"SDLUIKitDelegate");

@@ -87,25 +87,94 @@ with open(path, "w") as f:
 
 print("CMakeLists.txt patched for iOS.")
 
+# ── Helper: patch a file with a single string replacement ──────────────────
+def patch_file(filepath, old, new, already_tag, description):
+    if not os.path.exists(filepath):
+        print(f"Warning: {filepath} not found — skipping {description}.")
+        return
+    with open(filepath, "r") as f:
+        src = f.read()
+    if already_tag in src:
+        print(f"{os.path.basename(filepath)} already patched ({description}).")
+        return
+    if old not in src:
+        print(f"Warning: expected pattern not found in {filepath} — skipping {description}.")
+        return
+    src = src.replace(old, new)
+    with open(filepath, "w") as f:
+        f.write(src)
+    print(f"{os.path.basename(filepath)} patched for iOS ({description}).")
+
+src_dir = os.path.join(os.path.dirname(path), "src")
+
 # ── Patch src/gl/gl_renderer.h ──────────────────────────────────────────────
-# gl_renderer.h already guards glad for __EMSCRIPTEN__ and __ANDROID__.
-# We add PLATFORM_IOS to that guard so it uses <OpenGLES/ES3/gl.h> on iOS too.
-gl_renderer_h = os.path.join(os.path.dirname(path), "src", "gl", "gl_renderer.h")
-if not os.path.exists(gl_renderer_h):
-    print(f"Warning: {gl_renderer_h} not found — skipping GLES guard patch.")
-else:
-    with open(gl_renderer_h, "r") as f:
-        hsrc = f.read()
+# Already guards glad for Emscripten/Android; extend the guard to iOS too.
+patch_file(
+    os.path.join(src_dir, "gl", "gl_renderer.h"),
+    '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)\n#include <GLES3/gl3.h>\n#else\n#include <glad/glad.h>\n#endif',
+    '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(PLATFORM_IOS)\n#include <OpenGLES/ES3/gl.h>\n#include <OpenGLES/ES3/glext.h>\n#else\n#include <glad/glad.h>\n#endif',
+    'PLATFORM_IOS',
+    "OpenGLES guard in header"
+)
 
-    OLD_GUARD = '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)\n#include <GLES3/gl3.h>\n#else\n#include <glad/glad.h>\n#endif'
-    NEW_GUARD = '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(PLATFORM_IOS)\n#include <OpenGLES/ES3/gl.h>\n#include <OpenGLES/ES3/glext.h>\n#else\n#include <glad/glad.h>\n#endif'
+# ── Patch src/gl/gl_renderer.c ──────────────────────────────────────────────
+# The .c file has its own bare #include <glad/glad.h> at the top (line 8).
+# Replace it with the same guarded include used in the header.
+patch_file(
+    os.path.join(src_dir, "gl", "gl_renderer.c"),
+    '#include <glad/glad.h>',
+    '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(PLATFORM_IOS)\n#include <OpenGLES/ES3/gl.h>\n#include <OpenGLES/ES3/glext.h>\n#else\n#include <glad/glad.h>\n#endif',
+    'PLATFORM_IOS',
+    "OpenGLES guard in .c"
+)
 
-    if 'PLATFORM_IOS' in hsrc:
-        print("gl_renderer.h already patched.")
-    elif OLD_GUARD not in hsrc:
-        print(f"Warning: expected GLES guard not found in {gl_renderer_h} — skipping.")
-    else:
-        hsrc = hsrc.replace(OLD_GUARD, NEW_GUARD)
-        with open(gl_renderer_h, "w") as f:
-            f.write(hsrc)
-        print("gl_renderer.h patched for iOS (OpenGLES guard added).")
+# ── Patch src/gl_common/gl_common.c (and .h if present) ─────────────────────
+# gl_common sources may also include glad directly.
+for fname in ("gl_common.c", "gl_common.h"):
+    fpath = os.path.join(src_dir, "gl_common", fname)
+    if os.path.exists(fpath):
+        with open(fpath) as f:
+            content = f.read()
+        if '#include <glad/glad.h>' in content and 'PLATFORM_IOS' not in content:
+            content = content.replace(
+                '#include <glad/glad.h>',
+                '#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(PLATFORM_IOS)\n#include <OpenGLES/ES3/gl.h>\n#include <OpenGLES/ES3/glext.h>\n#else\n#include <glad/glad.h>\n#endif'
+            )
+            with open(fpath, "w") as f:
+                f.write(content)
+            print(f"{fname} patched for iOS (OpenGLES guard).")
+
+# ── Patch src/audio/miniaudio/ma_audio_system.c ─────────────────────────────
+# miniaudio.h includes AVFoundation which uses ObjC @class syntax.
+# That's fine in an .m file but breaks plain C compilation.
+# Rename the file to .m so clang compiles it as Objective-C.
+ma_c  = os.path.join(src_dir, "audio", "miniaudio", "ma_audio_system.c")
+ma_m  = os.path.join(src_dir, "audio", "miniaudio", "ma_audio_system.m")
+if os.path.exists(ma_c) and not os.path.exists(ma_m):
+    import shutil
+    shutil.copy2(ma_c, ma_m)
+    print("ma_audio_system.c copied to .m for iOS ObjC compilation.")
+# Tell CMake to use the .m file instead of the .c file on iOS.
+# We do this by adding a PLATFORM_SOURCES glob for .m in the audio dir,
+# which we handle by patching the IOS_BLOCK in CMakeLists.txt to also
+# remove the .c audio source and add the .m version.
+# Simpler: just add a compile flag to treat the file as ObjC via CMake
+# set_source_files_properties. We do it by appending to the ios block below
+# if not already done.
+# Actually the cleanest approach: add the -x objective-c flag for this file
+# in the iOS CMake block. But we already wrote CMakeLists.txt — patch it now.
+cmake_path = path  # CMakeLists.txt
+with open(cmake_path, "r") as f:
+    cmake_src = f.read()
+OLD_AUDIO_LINE = '    target_sources(butterscotch PRIVATE ${GL_SOURCES})'
+NEW_AUDIO_LINE = '''    target_sources(butterscotch PRIVATE ${GL_SOURCES})
+    # miniaudio.h pulls in AVFoundation which needs ObjC — compile as .m
+    set_source_files_properties(
+        ${CMAKE_SOURCE_DIR}/src/audio/miniaudio/ma_audio_system.c
+        PROPERTIES COMPILE_FLAGS "-x objective-c"
+    )'''
+if 'COMPILE_FLAGS "-x objective-c"' not in cmake_src and OLD_AUDIO_LINE in cmake_src:
+    cmake_src = cmake_src.replace(OLD_AUDIO_LINE, NEW_AUDIO_LINE)
+    with open(cmake_path, "w") as f:
+        f.write(cmake_src)
+    print("CMakeLists.txt patched: ma_audio_system.c flagged as ObjC.")

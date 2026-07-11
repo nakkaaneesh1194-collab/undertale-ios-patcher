@@ -88,6 +88,10 @@ endif()"""
     target_include_directories(butterscotch PRIVATE ${CMAKE_SOURCE_DIR}/src/gl_common)
     target_include_directories(butterscotch PRIVATE ${CMAKE_SOURCE_DIR}/src/image)
     add_compile_definitions(ENABLE_GLES PLATFORM_IOS USE_SDL2 GLES_SILENCE_DEPRECATION)
+    # -ObjC forces the linker to load all ObjC classes from static archives,
+    # including SDLUIKitDelegate in the SDL2 static framework.  Without this
+    # the class is dead-stripped and UIApplicationMain crashes at runtime.
+    target_link_options(butterscotch PRIVATE "-ObjC")
     # VirtualController thumbstick vs d-pad
     option(VIRTUAL_CONTROLLER_THUMBSTICK "Use thumbstick instead of d-pad" OFF)
     if(VIRTUAL_CONTROLLER_THUMBSTICK)

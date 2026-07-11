@@ -11,7 +11,7 @@
 #    - Xcode (for iOS SDK + clang)
 #    - cmake
 #    - UndertaleModCli (for data.win patching)
-#    - SDL2 (downloaded automatically)
+#    - No SDL2 required (uses UIKit/EAGL directly)
 #    - Butterscotch source (cloned automatically)
 #
 #  Output:
@@ -95,7 +95,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUTTERSCOTCH_DIR="$SCRIPT_DIR/Butterscotch"
 UTMT_DIR="$SCRIPT_DIR/UndertaleModCli"
 UTMT_BIN="$UTMT_DIR/UndertaleModCli"
-SDL2_DIR="$SCRIPT_DIR/SDL2-ios"
 
 # ============================================================
 # DEPENDENCY CHECKS
@@ -216,59 +215,7 @@ else
     success "Butterscotch iOS patch: already applied"
 fi
 
-# --- SDL2 for iOS (build from source) ---
-SDL2_XCFW="$SDL2_DIR/SDL2.framework"
-if [ ! -d "$SDL2_XCFW" ]; then
-    warn "SDL2 for iOS not found."
-    SDL2_SRC_URL="https://github.com/libsdl-org/SDL/releases/download/release-2.30.3/SDL2-2.30.3.tar.gz"
-    SDL2_SIZE=$(fetch_size "$SDL2_SRC_URL")
-    if ask_yn "Build SDL2 for iOS from source? (~$SDL2_SIZE download, a few minutes to build)"; then
-        info "Downloading SDL2 source..."
-        TMP_TAR=$(mktemp /tmp/SDL2.XXXXXX).tar.gz
-        curl -fsSL --progress-bar "$SDL2_SRC_URL" -o "$TMP_TAR" || error "SDL2 download failed."
-        info "Extracting SDL2 source..."
-        mkdir -p /tmp/sdl2-src
-        quietly tar -xzf "$TMP_TAR" -C /tmp/sdl2-src --strip-components=1
-        rm -f "$TMP_TAR"
-        info "Building SDL2 for iOS (this takes a minute)..."
-        SDL2_BUILD=$(mktemp -d /tmp/sdl2-build.XXXXXX)
-        cmake -S /tmp/sdl2-src -B "$SDL2_BUILD" \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DCMAKE_OSX_SYSROOT="$SYSROOT" \
-            -DSDL_SHARED=OFF \
-            -DSDL_STATIC=ON \
-            -DSDL_TEST=OFF \
-            -GXcode \
-            >"$SDL2_BUILD/cmake.log" 2>&1 \
-            || { cat "$SDL2_BUILD/cmake.log"; error "SDL2 CMake configure failed."; }
-        SDL2_TARGET=$(xcodebuild -project "$SDL2_BUILD/SDL2.xcodeproj" -list 2>/dev/null | grep -i "static" | head -1 | xargs)
-        [ -n "$SDL2_TARGET" ] || SDL2_TARGET="SDL2-static"
-        info "Building SDL2 target: $SDL2_TARGET"
-        xcodebuild -project "$SDL2_BUILD/SDL2.xcodeproj" \
-            -target "$SDL2_TARGET" \
-            -configuration Release \
-            -sdk iphoneos \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            >"$SDL2_BUILD/build.log" 2>&1 \
-            || { tail -50 "$SDL2_BUILD/build.log"; error "SDL2 build failed."; }
-        # Assemble a minimal SDL2.framework from the static lib + headers
-        mkdir -p "$SDL2_XCFW/Headers"
-        cp -R /tmp/sdl2-src/include/. "$SDL2_XCFW/Headers/"
-        LIBSDL=$(find "$SDL2_BUILD" -name "libSDL2.a" | head -1)
-        [ -n "$LIBSDL" ] || error "SDL2 static lib not found after build."
-        cp "$LIBSDL" "$SDL2_XCFW/SDL2"
-        rm -rf /tmp/sdl2-src "$SDL2_BUILD"
-        success "SDL2 built for iOS"
-    else
-        error "SDL2 is required."
-    fi
-else
-    success "SDL2: found"
-fi
+# No SDL2 needed — using UIKit/EAGL directly
 
 echo ""
 
@@ -375,7 +322,6 @@ success "data.win patched"
 section "Building Butterscotch for iOS..."
 
 BUILD_DIR="$WORK_DIR/build-ios"
-SDL2_FRAMEWORK_PATH="$SDL2_XCFW"
 
 info "Configuring CMake..."
 CMAKE_LOG=$(mktemp /tmp/cmake-configure.XXXXXX)
@@ -391,7 +337,6 @@ cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     -DENABLE_LEGACY_GL=OFF \
     -DENABLE_MODERN_GL=ON \
     ${USE_THUMBSTICK_FLAG} \
-    -DSDL2_FRAMEWORK_PATH="$SDL2_FRAMEWORK_PATH" \
     -DCMAKE_BUILD_TYPE=Release \
     -GXcode >"$CMAKE_LOG" 2>&1 \
     || { cat "$CMAKE_LOG"; rm -f "$CMAKE_LOG"; error "CMake configure failed."; }

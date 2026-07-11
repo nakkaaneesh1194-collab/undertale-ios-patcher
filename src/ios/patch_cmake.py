@@ -79,35 +79,24 @@ endif()"""
     endif()
     file(GLOB GL_SOURCES src/gl/*.c src/gl_common/*.c src/image/*.c)
     target_sources(butterscotch PRIVATE ${GL_SOURCES})
-    # miniaudio.h pulls in AVFoundation which needs ObjC — compile as ObjC
+    # ios_backend.c and main.c are ObjC — compile as ObjC
     set_source_files_properties(
+        ${CMAKE_SOURCE_DIR}/src/ios/ios_backend.c
+        ${CMAKE_SOURCE_DIR}/src/ios/main.c
         ${CMAKE_SOURCE_DIR}/src/audio/miniaudio/ma_audio_system.c
         PROPERTIES COMPILE_FLAGS "-x objective-c"
     )
     target_include_directories(butterscotch PRIVATE ${CMAKE_SOURCE_DIR}/src/gl)
     target_include_directories(butterscotch PRIVATE ${CMAKE_SOURCE_DIR}/src/gl_common)
     target_include_directories(butterscotch PRIVATE ${CMAKE_SOURCE_DIR}/src/image)
-    add_compile_definitions(ENABLE_GLES PLATFORM_IOS USE_SDL2 GLES_SILENCE_DEPRECATION)
-    # -ObjC forces the linker to load all ObjC class implementations from
-    # static libraries/frameworks, preventing SDLUIKitDelegate's methods
-    # from being dead-stripped. Set both ways to ensure it takes effect.
-    target_link_options(butterscotch PRIVATE -ObjC)
-    set_target_properties(butterscotch PROPERTIES
-        XCODE_ATTRIBUTE_OTHER_LDFLAGS "-ObjC"
-    )
+    add_compile_definitions(ENABLE_GLES PLATFORM_IOS GLES_SILENCE_DEPRECATION)
     # VirtualController thumbstick vs d-pad
     option(VIRTUAL_CONTROLLER_THUMBSTICK "Use thumbstick instead of d-pad" OFF)
     if(VIRTUAL_CONTROLLER_THUMBSTICK)
         add_compile_definitions(VIRTUAL_CONTROLLER_THUMBSTICK)
     endif()
-    # SDL2 — passed in via -DSDL2_FRAMEWORK_PATH (no SDL2Config.cmake in iOS DMG)
-    target_include_directories(butterscotch PRIVATE "${SDL2_FRAMEWORK_PATH}/Headers")
-    # The SDL2 iOS framework DMG does not ship libSDL2main.a, so we provide
-    # our own shim (sdl_main_shim.m) that calls UIApplicationMain with
-    # SDLUIKitDelegate, which in turn calls our SDL_main (i.e. main.c).
-    # iOS frameworks
+    # iOS frameworks — no SDL, pure UIKit/EAGL
     target_link_libraries(butterscotch PRIVATE
-        "${SDL2_FRAMEWORK_PATH}/SDL2"
         "-framework UIKit"
         "-framework GameController"
         "-framework CoreMotion"
@@ -119,6 +108,7 @@ endif()"""
         "-framework OpenGLES"
         "-framework AVFoundation"
         "-framework AudioToolbox"
+        "-framework Foundation"
         bzip2 stb_ds sha1 stb_vorbis
     )
     target_include_directories(butterscotch PUBLIC vendor/stb/image)

@@ -92,16 +92,12 @@ endif()"""
     endif()
     # SDL2 — passed in via -DSDL2_FRAMEWORK_PATH (no SDL2Config.cmake in iOS DMG)
     target_include_directories(butterscotch PRIVATE "${SDL2_FRAMEWORK_PATH}/Headers")
-    # libSDL2main.a provides the real main() that calls UIApplicationMain;
-    # SDL_main.h #defines main -> SDL_main so our main.c is the entry point.
-    find_library(SDL2MAIN_LIB SDL2main
-        PATHS "${SDL2_FRAMEWORK_PATH}"
-        NO_DEFAULT_PATH
-    )
+    # The SDL2 iOS framework DMG does not ship libSDL2main.a, so we provide
+    # our own shim (sdl_main_shim.m) that calls UIApplicationMain with
+    # SDLUIKitDelegate, which in turn calls our SDL_main (i.e. main.c).
     # iOS frameworks
     target_link_libraries(butterscotch PRIVATE
         "${SDL2_FRAMEWORK_PATH}/SDL2"
-        ${SDL2MAIN_LIB}
         "-framework UIKit"
         "-framework GameController"
         "-framework CoreMotion"

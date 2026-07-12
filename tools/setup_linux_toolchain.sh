@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLCHAIN_DIR="$HOME/.local/ios-toolchain"
 SDK_VERSION="26.5"
 SDK_NAME="iPhoneOS${SDK_VERSION}.sdk"
-SDK_URL="https://github.com/xybp888/iOS-SDKs/releases/download/iOS${SDK_VERSION}-SDKs/iPhoneOS${SDK_VERSION}.sdk.zip"
+SDK_URL="https://github.com/xybp888/iOS-SDKs/releases/download/iOS${SDK_VERSION}-SDKs/iPhoneOS${SDK_VERSION}.sdk.tar.gz"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -53,29 +53,31 @@ mkdir -p "$TOOLCHAIN_DIR"/{bin,sdk}
 # ── Download SDK ───────────────────────────────────────────────
 SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
 SDK_TARBALL="$TOOLCHAIN_DIR/sdk/$SDK_NAME.tar.gz"
+LOCAL_TARBALL="$SCRIPT_DIR/iPhoneOS.sdk.tar.gz"
+mkdir -p "$TOOLCHAIN_DIR/sdk"
+
 if [ ! -f "$SDK_TARBALL" ]; then
-    info "Downloading iPhoneOS $SDK_VERSION SDK..."
-    TMP_ZIP=$(mktemp /tmp/iPhoneOS.sdk.XXXXXX.zip)
-    curl -fsSL --progress-bar -L "$SDK_URL" -o "$TMP_ZIP" \
-        || error "Failed to download SDK. Check your internet connection."
-    info "Extracting SDK..."
-    TMP_EXTRACT=$(mktemp -d /tmp/iPhoneOS.sdk.XXXXXX)
-    unzip -q "$TMP_ZIP" -d "$TMP_EXTRACT/"
-    rm -f "$TMP_ZIP"
-    # Find the actual .sdk folder (ignore __MACOSX)
-    EXTRACTED_SDK=$(find "$TMP_EXTRACT" -maxdepth 2 -name "iPhoneOS*.sdk" -type d | head -1)
-    [ -n "$EXTRACTED_SDK" ] || error "SDK folder not found after extraction"
-    mkdir -p "$TOOLCHAIN_DIR/sdk"
-    # Re-pack as .tar.gz so cctools-port can consume it
-    info "Repacking SDK as tarball for cctools-port..."
-    tar -czf "$SDK_TARBALL" -C "$(dirname "$EXTRACTED_SDK")" "$(basename "$EXTRACTED_SDK")"
-    rm -rf "$TMP_EXTRACT"
-    success "SDK ready: $SDK_NAME"
+    if [ -f "$LOCAL_TARBALL" ]; then
+        # Use locally provided tarball (from get_sdk.sh on a Mac)
+        info "Using local SDK tarball: $LOCAL_TARBALL"
+        cp "$LOCAL_TARBALL" "$SDK_TARBALL"
+        success "SDK ready: $SDK_NAME"
+    else
+        # Try downloading from GitHub — note: the zip from xybp888/iOS-SDKs loses
+        # real .tbd files on Linux (only macOS resource forks survive unzip).
+        # If this fails, run tools/get_sdk.sh on a Mac and copy iPhoneOS.sdk.tar.gz here.
+        warn "No local SDK tarball found. Attempting download (may be incomplete on Linux)..."
+        TMP_TAR=$(mktemp /tmp/iPhoneOS.sdk.XXXXXX.tar.gz)
+        curl -fsSL --progress-bar -L "$SDK_URL" -o "$TMP_TAR" \
+            || error "Failed to download SDK.\nFor a complete SDK, run tools/get_sdk.sh on a Mac and copy iPhoneOS.sdk.tar.gz to tools/"
+        mv "$TMP_TAR" "$SDK_TARBALL"
+        success "SDK ready (downloaded): $SDK_NAME"
+    fi
 else
     success "SDK already present: $SDK_NAME"
 fi
+
 SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
-# Also extract for direct use by the compiler wrappers
 if [ ! -d "$SDK_PATH" ]; then
     tar -xzf "$SDK_TARBALL" -C "$TOOLCHAIN_DIR/sdk/"
 fi

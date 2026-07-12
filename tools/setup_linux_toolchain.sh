@@ -38,8 +38,10 @@ info "Installing build dependencies..."
 sudo apt-get update -qq
 sudo apt-get install -y -qq \
     clang llvm lld \
-    git cmake make \
+    g++ make cmake \
+    git pkg-config \
     libssl-dev uuid-dev \
+    libplist-dev \
     zip unzip curl \
     python3 \
     2>/dev/null
@@ -67,11 +69,18 @@ fi
 # ── Build cctools-port (ld64 + Apple binutils) ─────────────────
 if [ ! -f "$TOOLCHAIN_DIR/bin/arm-apple-darwin-ld" ]; then
     info "Building cctools-port (Apple Mach-O linker)..."
+    # cctools-port's build.sh parses the iOS version from the SDK folder name.
+    # Rename the SDK temporarily to match what it expects if needed.
+    REAL_SDK=$(find "$TOOLCHAIN_DIR/sdk" -maxdepth 1 -name "iPhoneOS*.sdk" -type d | head -1)
+    [ -n "$REAL_SDK" ] || error "SDK not found in $TOOLCHAIN_DIR/sdk"
+    SDK_PATH="$REAL_SDK"
     CCTOOLS_SRC=$(mktemp -d /tmp/cctools.XXXXXX)
     git clone --depth=1 https://github.com/tpoechtrager/cctools-port "$CCTOOLS_SRC" \
         || error "Failed to clone cctools-port"
     cd "$CCTOOLS_SRC/usage_examples/ios_toolchain"
-    bash build.sh "$TOOLCHAIN_DIR" "$SDK_PATH" arm 2>&1 | tail -20 \
+    # cctools build.sh requires the SDK path to end in iPhoneOSX.Y.sdk
+    # Pass it verbosely so we can see what's happening
+    bash build.sh "$TOOLCHAIN_DIR" "$SDK_PATH" arm 2>&1 \
         || error "cctools-port build failed"
     cd "$SCRIPT_DIR"
     rm -rf "$CCTOOLS_SRC"
@@ -84,7 +93,7 @@ fi
 if ! command -v ldid &>/dev/null && [ ! -f "$TOOLCHAIN_DIR/bin/ldid" ]; then
     info "Building ldid..."
     LDID_SRC=$(mktemp -d /tmp/ldid.XXXXXX)
-    git clone --depth=1 https://github.com/xerub/ldid "$LDID_SRC" \
+    git clone --depth=1 https://github.com/ProcursusTeam/ldid "$LDID_SRC" \
         || error "Failed to clone ldid"
     cd "$LDID_SRC"
     make -j$(nproc) 2>&1 | tail -5 || error "ldid build failed"

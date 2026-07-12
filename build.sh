@@ -96,17 +96,48 @@ BUTTERSCOTCH_DIR="$SCRIPT_DIR/Butterscotch"
 UTMT_DIR="$SCRIPT_DIR/UndertaleModCli"
 UTMT_BIN="$UTMT_DIR/UndertaleModCli"
 
+# ---- Detect host platform ----
+HOST_OS="$(uname -s)"
+IS_LINUX=false
+IS_MAC=false
+case "$HOST_OS" in
+    Linux*)  IS_LINUX=true ;;
+    Darwin*) IS_MAC=true ;;
+    *) error "Unsupported host OS: $HOST_OS" ;;
+esac
+
 # ============================================================
 # DEPENDENCY CHECKS
 # ============================================================
 section "Checking dependencies..."
 
-# --- Xcode / iOS SDK ---
-if ! xcrun --sdk iphoneos --show-sdk-path &>/dev/null; then
-    error "Xcode not found. Install Xcode from the App Store, then run:\n  sudo xcode-select --switch /Applications/Xcode.app"
+# --- iOS SDK / toolchain ---
+TOOLCHAIN_DIR="$HOME/.local/ios-toolchain"
+TOOLCHAIN_FILE="$SCRIPT_DIR/tools/ios-linux-toolchain.cmake"
+CMAKE_EXTRA_ARGS=""
+BUILD_GENERATOR="Unix Makefiles"
+
+if $IS_MAC; then
+    if ! xcrun --sdk iphoneos --show-sdk-path &>/dev/null; then
+        error "Xcode not found. Install Xcode from the App Store, then run:\n  sudo xcode-select --switch /Applications/Xcode.app"
+    fi
+    SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
+    success "iOS SDK: $(basename "$SYSROOT")"
+    BUILD_GENERATOR="Xcode"
+    CMAKE_EXTRA_ARGS="-DCMAKE_OSX_SYSROOT=$SYSROOT -GXcode"
+else
+    # Linux — check toolchain is set up
+    if [ ! -f "$TOOLCHAIN_FILE" ]; then
+        error "iOS toolchain not set up. Run:\n  bash tools/setup_linux_toolchain.sh"
+    fi
+    SDK_PATH=$(find "$TOOLCHAIN_DIR/sdk" -maxdepth 1 -name "iPhoneOS*.sdk" -type d | head -1)
+    [ -n "$SDK_PATH" ] || error "iPhoneOS SDK not found in $TOOLCHAIN_DIR/sdk\nRe-run tools/setup_linux_toolchain.sh"
+    SYSROOT="$SDK_PATH"
+    success "iOS SDK: $(basename "$SYSROOT")"
+    success "Cross-compiler: $TOOLCHAIN_DIR/bin/ios-clang"
+    CMAKE_EXTRA_ARGS="-DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN_FILE"
+    BUILD_GENERATOR="Unix Makefiles"
 fi
-SYSROOT=$(xcrun --sdk iphoneos --show-sdk-path)
-success "iOS SDK: $(basename "$SYSROOT")"
 
 # --- cmake ---
 if ! command -v cmake &>/dev/null; then
@@ -330,7 +361,6 @@ cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-    -DCMAKE_OSX_SYSROOT="$SYSROOT" \
     -DENABLE_WAD16=ON \
     -DENABLE_WAD14=OFF \
     -DENABLE_WAD17=OFF \
@@ -338,31 +368,65 @@ cmake -S "$BUTTERSCOTCH_DIR" -B "$BUILD_DIR" \
     -DENABLE_MODERN_GL=ON \
     ${USE_THUMBSTICK_FLAG} \
     -DCMAKE_BUILD_TYPE=Release \
-    -GXcode >"$CMAKE_LOG" 2>&1 \
+    -G"$BUILD_GENERATOR" \
+    $CMAKE_EXTRA_ARGS >"$CMAKE_LOG" 2>&1 \
     || { cat "$CMAKE_LOG"; rm -f "$CMAKE_LOG"; error "CMake configure failed."; }
 $VERBOSE && cat "$CMAKE_LOG" || grep -iE "error:|warning:" "$CMAKE_LOG" | tail -5 || true
 rm -f "$CMAKE_LOG"
 
 info "Compiling (this may take a few minutes)..."
 BUILD_LOG=$(mktemp /tmp/cmake-build.XXXXXX)
-cmake --build "$BUILD_DIR" \
-    --config Release \
-    -- \
-    CODE_SIGNING_ALLOWED=NO \
-    CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_IDENTITY="" >"$BUILD_LOG" 2>&1 \
-    || { cat "$BUILD_LOG"; rm -f "$BUILD_LOG"; error "Build failed."; }
+if $IS_MAC; then
+    cmake --build "$BUILD_DIR" \
+        --config Release \
+        -- \
+        CODE_SIGNING_ALLOWED=NO \
+        CODE_SIGNING_REQUIRED=NO \
+        CODE_SIGN_IDENTITY="" >"$BUILD_LOG" 2>&1 \
+        || { cat "$BUILD_LOG"; rm -f "$BUILD_LOG"; error "Build failed."; }
+else
+    cmake --build "$BUILD_DIR" \
+        --config Release \
+        -j$(nproc) >"$BUILD_LOG" 2>&1 \
+        || { cat "$BUILD_LOG"; rm -f "$BUILD_LOG"; error "Build failed."; }
+fi
 $VERBOSE && cat "$BUILD_LOG" || grep -iE "error:|Build succeeded|FAILED" "$BUILD_LOG" | tail -5 || true
 rm -f "$BUILD_LOG"
 
 APP_PATH=$(find "$BUILD_DIR" -name "butterscotch.app" -type d | head -1)
-[ -n "$APP_PATH" ] || error "Build failed — butterscotch.app not found.\nRun with -v for full output."
+# On Linux the binary is just called "butterscotch" with no .app wrapper — create one
+if [ -z "$APP_PATH" ]; then
+    BS_BIN=$(find "$BUILD_DIR" -name "butterscotch" -type f | head -1)
+    [ -n "$BS_BIN" ] || error "Build failed — butterscotch binary not found.\nRun with -v for full output."
+    APP_PATH="$BUILD_DIR/butterscotch.app"
+    mkdir -p "$APP_PATH"
+    cp "$BS_BIN" "$APP_PATH/butterscotch"
+    # fake-sign the binary
+    if command -v ldid &>/dev/null; then
+        ldid -S "$APP_PATH/butterscotch"
+    elif [ -f "$HOME/.local/ios-toolchain/bin/ldid" ]; then
+        "$HOME/.local/ios-toolchain/bin/ldid" -S "$APP_PATH/butterscotch"
+    fi
+fi
 success "Build complete"
 
 # ============================================================
 # BUNDLE GAME FILES INTO APP
 # ============================================================
 section "Bundling game files..."
+
+# On Linux, copy Info.plist into the .app (Xcode does this automatically on Mac)
+if $IS_LINUX && [ ! -f "$APP_PATH/Info.plist" ]; then
+    PLIST_SRC=$(find "$BUTTERSCOTCH_DIR/src/ios" -name "Info.plist*" | head -1)
+    if [ -n "$PLIST_SRC" ]; then
+        # Substitute CMake variables in the .in template if needed
+        sed "s/@MACOSX_BUNDLE_GUI_IDENTIFIER@/org.butterscotch.Undertale/g;
+             s/@MACOSX_BUNDLE_BUNDLE_NAME@/Undertale/g;
+             s/@MACOSX_BUNDLE_SHORT_VERSION_STRING@/1.0/g;
+             s/@MACOSX_BUNDLE_BUNDLE_VERSION@/1/g" \
+            "$PLIST_SRC" > "$APP_PATH/Info.plist"
+    fi
+fi
 
 info "Copying game assets..."
 if command -v rsync &>/dev/null; then

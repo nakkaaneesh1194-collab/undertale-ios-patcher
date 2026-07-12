@@ -122,7 +122,7 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/arm-apple-darwin-ld" ]; then
     cd "$CCTOOLS_SRC/usage_examples/ios_toolchain"
     # build.sh takes: <sdk.tar.gz> <arch>
     # It installs into ./target/ inside the source tree
-    bash build.sh "$CCTOOLS_SDK_TAR" arm 2>&1 \
+    bash build.sh "$CCTOOLS_SDK_TAR" arm64 2>&1 \
         || error "cctools-port build failed"
     # Copy binaries to our toolchain dir
     cp -R "$CCTOOLS_SRC/usage_examples/ios_toolchain/target/bin"/. "$TOOLCHAIN_DIR/bin/"

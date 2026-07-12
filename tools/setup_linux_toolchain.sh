@@ -120,9 +120,14 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/arm-apple-darwin-ld" ]; then
     git clone --depth=1 https://github.com/tpoechtrager/cctools-port "$CCTOOLS_SRC" \
         || error "Failed to clone cctools-port"
     cd "$CCTOOLS_SRC/usage_examples/ios_toolchain"
-    # build.sh expects a SDK tarball as first arg, install prefix as second, arch as third
-    bash build.sh "$CCTOOLS_SDK_TAR" "$TOOLCHAIN_DIR" arm 2>&1 \
+    # build.sh takes: <sdk.tar.gz> <arch>
+    # It installs into ./target/ inside the source tree
+    bash build.sh "$CCTOOLS_SDK_TAR" arm 2>&1 \
         || error "cctools-port build failed"
+    # Copy binaries to our toolchain dir
+    cp -R "$CCTOOLS_SRC/usage_examples/ios_toolchain/target/bin"/. "$TOOLCHAIN_DIR/bin/"
+    [ -d "$CCTOOLS_SRC/usage_examples/ios_toolchain/target/lib" ] && \
+        cp -R "$CCTOOLS_SRC/usage_examples/ios_toolchain/target/lib"/. "$TOOLCHAIN_DIR/lib/" || true
     cd "$SCRIPT_DIR"
     rm -rf "$CCTOOLS_SRC"
     success "cctools-port built"

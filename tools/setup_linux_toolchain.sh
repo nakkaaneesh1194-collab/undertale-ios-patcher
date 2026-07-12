@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLCHAIN_DIR="$HOME/.local/ios-toolchain"
 SDK_VERSION="26.5"
 SDK_NAME="iPhoneOS${SDK_VERSION}.sdk"
-SDK_URL="https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS${SDK_VERSION}.sdk.zip"
+SDK_URL="https://github.com/xybp888/iOS-SDKs/releases/download/iOS${SDK_VERSION}-SDKs/iPhoneOS${SDK_VERSION}.sdk.zip"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -53,8 +53,8 @@ SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
 if [ ! -d "$SDK_PATH" ]; then
     info "Downloading iPhoneOS $SDK_VERSION SDK..."
     TMP_ZIP=$(mktemp /tmp/iPhoneOS.sdk.XXXXXX.zip)
-    curl -fsSL --progress-bar "$SDK_URL" -o "$TMP_ZIP" \
-        || error "Failed to download SDK from xybp888/iOS-SDKs.\nCheck your internet connection or manually place iPhoneOS.sdk.tar.gz in tools/ and re-run."
+    curl -fsSL --progress-bar -L "$SDK_URL" -o "$TMP_ZIP" \
+        || error "Failed to download SDK. Check your internet connection."
     info "Extracting SDK..."
     unzip -q "$TMP_ZIP" -d "$TOOLCHAIN_DIR/sdk/"
     rm -f "$TMP_ZIP"

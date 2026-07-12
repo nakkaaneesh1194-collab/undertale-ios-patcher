@@ -17,7 +17,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLCHAIN_DIR="$HOME/.local/ios-toolchain"
 SDK_VERSION="26.5"
 SDK_NAME="iPhoneOS${SDK_VERSION}.sdk"
-SDK_URL="https://github.com/xybp888/iOS-SDKs/releases/download/iOS${SDK_VERSION}-SDKs/iPhoneOS${SDK_VERSION}.sdk.tar.gz"
+# Tag archive of the full repo — SDK files are git-tracked, so .tbd stubs are intact on Linux
+SDK_URL="https://github.com/xybp888/iOS-SDKs/archive/refs/tags/iOS${SDK_VERSION}-SDKs.tar.gz"
+SDK_ARCHIVE_PREFIX="iOS-SDKs-iOS${SDK_VERSION}-SDKs"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -58,30 +60,47 @@ SDK_TARBALL="$TOOLCHAIN_DIR/sdk/$SDK_NAME.tar.gz"
 LOCAL_TARBALL="$SCRIPT_DIR/iPhoneOS.sdk.tar.gz"
 mkdir -p "$TOOLCHAIN_DIR/sdk"
 
-if [ ! -f "$SDK_TARBALL" ]; then
+SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
+
+if [ ! -d "$SDK_PATH" ]; then
     if [ -f "$LOCAL_TARBALL" ]; then
-        # Use locally provided tarball (from get_sdk.sh on a Mac)
+        # Use locally provided tarball (from get_sdk.sh on a Mac) — extract directly
         info "Using local SDK tarball: $LOCAL_TARBALL"
-        cp "$LOCAL_TARBALL" "$SDK_TARBALL"
-        success "SDK ready: $SDK_NAME"
+        tar -xzf "$LOCAL_TARBALL" -C "$TOOLCHAIN_DIR/sdk/"
+        # get_sdk.sh tars just the SDK folder, so it extracts as iPhoneOS*.sdk/
+        EXTRACTED=$(find "$TOOLCHAIN_DIR/sdk" -maxdepth 1 -name "iPhoneOS*.sdk" -type d | head -1)
+        [ -n "$EXTRACTED" ] || error "SDK not found after extracting local tarball"
+        SDK_PATH="$EXTRACTED"
+        success "SDK ready: $(basename "$SDK_PATH")"
     else
-        # Try downloading from GitHub — note: the zip from xybp888/iOS-SDKs loses
-        # real .tbd files on Linux (only macOS resource forks survive unzip).
-        # If this fails, run tools/get_sdk.sh on a Mac and copy iPhoneOS.sdk.tar.gz here.
-        warn "No local SDK tarball found. Attempting download (may be incomplete on Linux)..."
+        # Download the repo tag archive — SDK is a regular git-tracked directory,
+        # so .tbd stub files are intact (no macOS resource fork issues).
+        info "Downloading iOS SDK from xybp888/iOS-SDKs..."
         TMP_TAR=$(mktemp /tmp/iPhoneOS.sdk.XXXXXX.tar.gz)
-        curl -fsSL --progress-bar -L "$SDK_URL" -o "$TMP_TAR" \
+        curl -fL --progress-bar "$SDK_URL" -o "$TMP_TAR" \
             || error "Failed to download SDK.\nFor a complete SDK, run tools/get_sdk.sh on a Mac and copy iPhoneOS.sdk.tar.gz to tools/"
-        mv "$TMP_TAR" "$SDK_TARBALL"
-        success "SDK ready (downloaded): $SDK_NAME"
+
+        # The tag archive extracts as iOS-SDKs-iOS26.5-SDKs/iPhoneOS26.5.sdk/...
+        # Strip the top-level repo folder so we get just the SDK directory
+        info "Extracting SDK..."
+        TMP_EXTRACT=$(mktemp -d /tmp/sdk-extract.XXXXXX)
+        tar -xzf "$TMP_TAR" -C "$TMP_EXTRACT" \
+            "${SDK_ARCHIVE_PREFIX}/${SDK_NAME}/" 2>/dev/null \
+            || tar -xzf "$TMP_TAR" -C "$TMP_EXTRACT" 2>/dev/null \
+            || error "Failed to extract SDK"
+        rm -f "$TMP_TAR"
+
+        # Move the SDK folder to toolchain dir
+        FOUND_SDK=$(find "$TMP_EXTRACT" -maxdepth 2 -name "iPhoneOS*.sdk" -type d | head -1)
+        [ -n "$FOUND_SDK" ] || error "iPhoneOS*.sdk not found in downloaded archive"
+        mv "$FOUND_SDK" "$TOOLCHAIN_DIR/sdk/"
+        rm -rf "$TMP_EXTRACT"
+
+        SDK_PATH=$(find "$TOOLCHAIN_DIR/sdk" -maxdepth 1 -name "iPhoneOS*.sdk" -type d | head -1)
+        success "SDK ready: $(basename "$SDK_PATH")"
     fi
 else
-    success "SDK already present: $SDK_NAME"
-fi
-
-SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
-if [ ! -d "$SDK_PATH" ]; then
-    tar -xzf "$SDK_TARBALL" -C "$TOOLCHAIN_DIR/sdk/"
+    success "SDK already present: $(basename "$SDK_PATH")"
 fi
 
 # ── Build cctools-port (ld64 + Apple binutils) ─────────────────

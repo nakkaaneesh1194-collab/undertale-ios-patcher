@@ -15,7 +15,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLCHAIN_DIR="$HOME/.local/ios-toolchain"
-SDK_VERSION="26.5"
+SDK_VERSION="17.5"
 SDK_NAME="iPhoneOS${SDK_VERSION}.sdk"
 # Tag archive of the full repo — SDK files are git-tracked, so .tbd stubs are intact on Linux
 SDK_URL="https://github.com/xybp888/iOS-SDKs/archive/refs/tags/iOS${SDK_VERSION}-SDKs.tar.gz"

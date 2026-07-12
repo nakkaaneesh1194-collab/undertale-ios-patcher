@@ -1,0 +1,5 @@
+Butterscotch/
+UndertaleModCli/
+*.ipa
+*.zip
+tools/ios-linux-toolchain.cmake

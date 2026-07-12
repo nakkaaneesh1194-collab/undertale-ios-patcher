@@ -110,12 +110,18 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/arm-apple-darwin-ld" ]; then
     REAL_SDK=$(find "$TOOLCHAIN_DIR/sdk" -maxdepth 1 -name "iPhoneOS*.sdk" -type d | head -1)
     [ -n "$REAL_SDK" ] || error "SDK not found in $TOOLCHAIN_DIR/sdk"
     SDK_PATH="$REAL_SDK"
+    # cctools-port build.sh requires a .tar.gz — repack the SDK directory
+    CCTOOLS_SDK_TAR="$TOOLCHAIN_DIR/sdk/$(basename "$REAL_SDK").tar.gz"
+    if [ ! -f "$CCTOOLS_SDK_TAR" ]; then
+        info "Repacking SDK for cctools-port..."
+        tar -czf "$CCTOOLS_SDK_TAR" -C "$TOOLCHAIN_DIR/sdk" "$(basename "$REAL_SDK")"
+    fi
     CCTOOLS_SRC=$(mktemp -d /tmp/cctools.XXXXXX)
     git clone --depth=1 https://github.com/tpoechtrager/cctools-port "$CCTOOLS_SRC" \
         || error "Failed to clone cctools-port"
     cd "$CCTOOLS_SRC/usage_examples/ios_toolchain"
     # build.sh expects a SDK tarball as first arg, install prefix as second, arch as third
-    bash build.sh "$SDK_TARBALL" "$TOOLCHAIN_DIR" arm 2>&1 \
+    bash build.sh "$CCTOOLS_SDK_TAR" "$TOOLCHAIN_DIR" arm 2>&1 \
         || error "cctools-port build failed"
     cd "$SCRIPT_DIR"
     rm -rf "$CCTOOLS_SRC"

@@ -21,12 +21,14 @@ SDK_URL="https://github.com/xybp888/iOS-SDKs/releases/download/iOS${SDK_VERSION}
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
 info()    { echo -e "  ${CYAN}→${NC} $1"; }
 success() { echo -e "  ${GREEN}✓${NC} $1"; }
+warn()    { echo -e "  ${YELLOW}⚠${NC}  $1"; }
 error()   { echo -e "\n  ${RED}✗ Error:${NC} $1\n"; exit 1; }
 
 echo ""

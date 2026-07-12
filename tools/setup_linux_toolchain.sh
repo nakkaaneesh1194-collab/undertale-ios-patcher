@@ -52,18 +52,32 @@ mkdir -p "$TOOLCHAIN_DIR"/{bin,sdk}
 
 # ── Download SDK ───────────────────────────────────────────────
 SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
-if [ ! -d "$SDK_PATH" ]; then
+SDK_TARBALL="$TOOLCHAIN_DIR/sdk/$SDK_NAME.tar.gz"
+if [ ! -f "$SDK_TARBALL" ]; then
     info "Downloading iPhoneOS $SDK_VERSION SDK..."
     TMP_ZIP=$(mktemp /tmp/iPhoneOS.sdk.XXXXXX.zip)
     curl -fsSL --progress-bar -L "$SDK_URL" -o "$TMP_ZIP" \
         || error "Failed to download SDK. Check your internet connection."
     info "Extracting SDK..."
-    unzip -q "$TMP_ZIP" -d "$TOOLCHAIN_DIR/sdk/"
+    TMP_EXTRACT=$(mktemp -d /tmp/iPhoneOS.sdk.XXXXXX)
+    unzip -q "$TMP_ZIP" -d "$TMP_EXTRACT/"
     rm -f "$TMP_ZIP"
-    [ -d "$SDK_PATH" ] || error "SDK extraction failed — expected $SDK_PATH"
-    success "SDK downloaded: $SDK_NAME"
+    # Find the actual .sdk folder (ignore __MACOSX)
+    EXTRACTED_SDK=$(find "$TMP_EXTRACT" -maxdepth 2 -name "iPhoneOS*.sdk" -type d | head -1)
+    [ -n "$EXTRACTED_SDK" ] || error "SDK folder not found after extraction"
+    mkdir -p "$TOOLCHAIN_DIR/sdk"
+    # Re-pack as .tar.gz so cctools-port can consume it
+    info "Repacking SDK as tarball for cctools-port..."
+    tar -czf "$SDK_TARBALL" -C "$(dirname "$EXTRACTED_SDK")" "$(basename "$EXTRACTED_SDK")"
+    rm -rf "$TMP_EXTRACT"
+    success "SDK ready: $SDK_NAME"
 else
     success "SDK already present: $SDK_NAME"
+fi
+SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
+# Also extract for direct use by the compiler wrappers
+if [ ! -d "$SDK_PATH" ]; then
+    tar -xzf "$SDK_TARBALL" -C "$TOOLCHAIN_DIR/sdk/"
 fi
 
 # ── Build cctools-port (ld64 + Apple binutils) ─────────────────
@@ -78,9 +92,8 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/arm-apple-darwin-ld" ]; then
     git clone --depth=1 https://github.com/tpoechtrager/cctools-port "$CCTOOLS_SRC" \
         || error "Failed to clone cctools-port"
     cd "$CCTOOLS_SRC/usage_examples/ios_toolchain"
-    # cctools build.sh requires the SDK path to end in iPhoneOSX.Y.sdk
-    # Pass it verbosely so we can see what's happening
-    bash build.sh "$TOOLCHAIN_DIR" "$SDK_PATH" arm 2>&1 \
+    # build.sh expects a SDK tarball as first arg, install prefix as second, arch as third
+    bash build.sh "$SDK_TARBALL" "$TOOLCHAIN_DIR" arm 2>&1 \
         || error "cctools-port build failed"
     cd "$SCRIPT_DIR"
     rm -rf "$CCTOOLS_SRC"

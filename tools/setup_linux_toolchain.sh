@@ -73,28 +73,27 @@ if [ ! -d "$SDK_PATH" ]; then
         SDK_PATH="$EXTRACTED"
         success "SDK ready: $(basename "$SDK_PATH")"
     else
-        # Download the repo tag archive — SDK is a regular git-tracked directory,
-        # so .tbd stub files are intact (no macOS resource fork issues).
-        info "Downloading iOS SDK from xybp888/iOS-SDKs..."
-        TMP_TAR=$(mktemp /tmp/iPhoneOS.sdk.XXXXXX.tar.gz)
-        curl -fL --progress-bar "$SDK_URL" -o "$TMP_TAR" \
-            || error "Failed to download SDK.\nFor a complete SDK, run tools/get_sdk.sh on a Mac and copy iPhoneOS.sdk.tar.gz to tools/"
+        # Sparse-clone just the iPhoneOS26.5.sdk folder from xybp888/iOS-SDKs.
+        # Full tag archive contains all SDKs (~2 GB) — sparse checkout pulls ~200 MB.
+        info "Downloading iOS ${SDK_VERSION} SDK (sparse clone)..."
+        TMP_CLONE=$(mktemp -d /tmp/ios-sdks.XXXXXX)
+        git clone \
+            --depth=1 \
+            --filter=blob:none \
+            --sparse \
+            --branch "iOS${SDK_VERSION}-SDKs" \
+            https://github.com/xybp888/iOS-SDKs.git \
+            "$TMP_CLONE" 2>&1 | grep -v "^$" \
+            || error "Failed to clone xybp888/iOS-SDKs.\nFor a complete SDK, run tools/get_sdk.sh on a Mac and copy iPhoneOS.sdk.tar.gz to tools/"
 
-        # The tag archive extracts as iOS-SDKs-iOS26.5-SDKs/iPhoneOS26.5.sdk/...
-        # Strip the top-level repo folder so we get just the SDK directory
-        info "Extracting SDK..."
-        TMP_EXTRACT=$(mktemp -d /tmp/sdk-extract.XXXXXX)
-        tar -xzf "$TMP_TAR" -C "$TMP_EXTRACT" \
-            "${SDK_ARCHIVE_PREFIX}/${SDK_NAME}/" 2>/dev/null \
-            || tar -xzf "$TMP_TAR" -C "$TMP_EXTRACT" 2>/dev/null \
-            || error "Failed to extract SDK"
-        rm -f "$TMP_TAR"
+        git -C "$TMP_CLONE" sparse-checkout set "$SDK_NAME" \
+            || error "sparse-checkout failed"
+        git -C "$TMP_CLONE" checkout 2>&1 | grep -v "^$" || true
 
-        # Move the SDK folder to toolchain dir
-        FOUND_SDK=$(find "$TMP_EXTRACT" -maxdepth 2 -name "iPhoneOS*.sdk" -type d | head -1)
-        [ -n "$FOUND_SDK" ] || error "iPhoneOS*.sdk not found in downloaded archive"
+        FOUND_SDK="$TMP_CLONE/$SDK_NAME"
+        [ -d "$FOUND_SDK" ] || error "iPhoneOS*.sdk not found after sparse checkout"
         mv "$FOUND_SDK" "$TOOLCHAIN_DIR/sdk/"
-        rm -rf "$TMP_EXTRACT"
+        rm -rf "$TMP_CLONE"
 
         SDK_PATH=$(find "$TOOLCHAIN_DIR/sdk" -maxdepth 1 -name "iPhoneOS*.sdk" -type d | head -1)
         success "SDK ready: $(basename "$SDK_PATH")"

@@ -124,13 +124,29 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/arm-apple-darwin-ld" ]; then
     # It installs into ./target/ inside the source tree
     bash build.sh "$CCTOOLS_SDK_TAR" arm64 2>&1 \
         || error "cctools-port build failed"
-    # Copy binaries to our toolchain dir
-    cp -R "$CCTOOLS_SRC/usage_examples/ios_toolchain/target/bin"/. "$TOOLCHAIN_DIR/bin/"
-    [ -d "$CCTOOLS_SRC/usage_examples/ios_toolchain/target/lib" ] && \
-        cp -R "$CCTOOLS_SRC/usage_examples/ios_toolchain/target/lib"/. "$TOOLCHAIN_DIR/lib/" || true
+    # Find where cctools actually installed its binaries
+    CCTOOLS_TARGET=$(find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -name "*-ld" -o -name "ld64*" 2>/dev/null | head -1)
+    if [ -n "$CCTOOLS_TARGET" ]; then
+        CCTOOLS_BIN=$(dirname "$CCTOOLS_TARGET")
+    else
+        # fallback: look for any target/bin directory
+        CCTOOLS_BIN=$(find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -type d -name "bin" | head -1)
+    fi
+    [ -n "$CCTOOLS_BIN" ] || error "cctools-port binaries not found after build. Run with -v to debug."
+    mkdir -p "$TOOLCHAIN_DIR/bin"
+    cp "$CCTOOLS_BIN"/* "$TOOLCHAIN_DIR/bin/" 2>/dev/null || true
+    # Also copy any lib directory
+    CCTOOLS_LIB=$(find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -type d -name "lib" | head -1)
+    if [ -n "$CCTOOLS_LIB" ]; then
+        mkdir -p "$TOOLCHAIN_DIR/lib"
+        cp -R "$CCTOOLS_LIB"/. "$TOOLCHAIN_DIR/lib/" 2>/dev/null || true
+    fi
     cd "$SCRIPT_DIR"
     rm -rf "$CCTOOLS_SRC"
-    success "cctools-port built"
+    # Verify ld was actually installed
+    LD_BIN=$(find "$TOOLCHAIN_DIR/bin" -name "*-ld" -o -name "ld64*" 2>/dev/null | head -1)
+    [ -n "$LD_BIN" ] || error "cctools ld not found in $TOOLCHAIN_DIR/bin after install"
+    success "cctools-port built (ld: $(basename "$LD_BIN"))"
 else
     success "cctools-port: already built"
 fi
@@ -154,12 +170,17 @@ fi
 # ── Write compiler wrapper scripts ────────────────────────────
 info "Writing compiler wrappers..."
 
+# Find the cctools linker binary
+CCTOOLS_LD=$(find "$TOOLCHAIN_DIR/bin" -name "*-ld" | head -1)
+[ -n "$CCTOOLS_LD" ] || error "cctools ld not found in $TOOLCHAIN_DIR/bin"
+
 cat > "$TOOLCHAIN_DIR/bin/ios-clang" << WRAPPER
 #!/bin/sh
 exec clang \\
     -target arm64-apple-ios15.0 \\
     -isysroot "$SDK_PATH" \\
     -I"$SDK_PATH/usr/include" \\
+    -fuse-ld="$CCTOOLS_LD" \\
     "\$@"
 WRAPPER
 chmod +x "$TOOLCHAIN_DIR/bin/ios-clang"
@@ -170,6 +191,7 @@ exec clang++ \\
     -target arm64-apple-ios15.0 \\
     -isysroot "$SDK_PATH" \\
     -I"$SDK_PATH/usr/include" \\
+    -fuse-ld="$CCTOOLS_LD" \\
     "\$@"
 WRAPPER
 chmod +x "$TOOLCHAIN_DIR/bin/ios-clang++"

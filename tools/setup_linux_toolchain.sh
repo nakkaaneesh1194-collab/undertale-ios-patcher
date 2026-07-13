@@ -125,27 +125,22 @@ if [ ! -f "$TOOLCHAIN_DIR/bin/arm-apple-darwin-ld" ]; then
     # It installs into ./target/ inside the source tree
     bash build.sh "$CCTOOLS_SDK_TAR" arm64 2>&1 \
         || error "cctools-port build failed"
-    # Find where cctools actually installed its binaries
-    CCTOOLS_TARGET=$(find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -name "*-ld" -o -name "ld64*" 2>/dev/null | head -1)
-    if [ -n "$CCTOOLS_TARGET" ]; then
-        CCTOOLS_BIN=$(dirname "$CCTOOLS_TARGET")
-    else
-        # fallback: look for any target/bin directory
-        CCTOOLS_BIN=$(find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -type d -name "bin" | head -1)
-    fi
-    [ -n "$CCTOOLS_BIN" ] || error "cctools-port binaries not found after build. Run with -v to debug."
-    mkdir -p "$TOOLCHAIN_DIR/bin"
-    cp "$CCTOOLS_BIN"/* "$TOOLCHAIN_DIR/bin/" 2>/dev/null || true
-    # Also copy any lib directory
-    CCTOOLS_LIB=$(find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -type d -name "lib" | head -1)
-    if [ -n "$CCTOOLS_LIB" ]; then
-        mkdir -p "$TOOLCHAIN_DIR/lib"
-        cp -R "$CCTOOLS_LIB"/. "$TOOLCHAIN_DIR/lib/" 2>/dev/null || true
-    fi
+    # Copy ALL binaries and libraries from the cctools target tree
+    mkdir -p "$TOOLCHAIN_DIR/bin" "$TOOLCHAIN_DIR/lib"
+    find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -type f -name "*.so*" \
+        -exec cp -f {} "$TOOLCHAIN_DIR/lib/" \; 2>/dev/null || true
+    find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -type l -name "*.so*" \
+        -exec cp -Pf {} "$TOOLCHAIN_DIR/lib/" \; 2>/dev/null || true
+    # Also grab libs built by llvm-tapi / tapi inside cctools build tree
+    find "$CCTOOLS_SRC" -name "libtapi*" \
+        -exec cp -Pf {} "$TOOLCHAIN_DIR/lib/" \; 2>/dev/null || true
+    # Copy binaries
+    CCTOOLS_BIN=$(find "$CCTOOLS_SRC/usage_examples/ios_toolchain/target" -type d -name "bin" | head -1)
+    [ -n "$CCTOOLS_BIN" ] && cp "$CCTOOLS_BIN"/* "$TOOLCHAIN_DIR/bin/" 2>/dev/null || true
     cd "$SCRIPT_DIR"
     rm -rf "$CCTOOLS_SRC"
     # Verify ld was actually installed
-    LD_BIN=$(find "$TOOLCHAIN_DIR/bin" -name "*-ld" -o -name "ld64*" 2>/dev/null | head -1)
+    LD_BIN=$(find "$TOOLCHAIN_DIR/bin" -name "*-ld" 2>/dev/null | head -1)
     [ -n "$LD_BIN" ] || error "cctools ld not found in $TOOLCHAIN_DIR/bin after install"
     success "cctools-port built (ld: $(basename "$LD_BIN"))"
 else
@@ -177,6 +172,7 @@ CCTOOLS_LD=$(find "$TOOLCHAIN_DIR/bin" -name "*-ld" | head -1)
 
 cat > "$TOOLCHAIN_DIR/bin/ios-clang" << WRAPPER
 #!/bin/sh
+export LD_LIBRARY_PATH="$TOOLCHAIN_DIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
 exec clang \\
     -target arm64-apple-ios15.0 \\
     -isysroot "$SDK_PATH" \\
@@ -188,6 +184,7 @@ chmod +x "$TOOLCHAIN_DIR/bin/ios-clang"
 
 cat > "$TOOLCHAIN_DIR/bin/ios-clang++" << WRAPPER
 #!/bin/sh
+export LD_LIBRARY_PATH="$TOOLCHAIN_DIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
 exec clang++ \\
     -target arm64-apple-ios15.0 \\
     -isysroot "$SDK_PATH" \\
@@ -213,6 +210,10 @@ set(IOS_SDK_PATH "$SDK_PATH")
 
 set(CMAKE_C_COMPILER   "$TOOLCHAIN_DIR/bin/ios-clang")
 set(CMAKE_CXX_COMPILER "$TOOLCHAIN_DIR/bin/ios-clang++")
+
+# Use cctools ar/ranlib so static libs are built in Mach-O format
+set(CMAKE_AR           "$TOOLCHAIN_DIR/bin/arm-apple-darwin11-ar")
+set(CMAKE_RANLIB       "$TOOLCHAIN_DIR/bin/arm-apple-darwin11-ranlib")
 
 set(CMAKE_OSX_SYSROOT           "$SDK_PATH")
 set(CMAKE_OSX_ARCHITECTURES     arm64)

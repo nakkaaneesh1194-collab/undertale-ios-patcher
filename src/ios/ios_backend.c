@@ -279,6 +279,9 @@ static void resizeFramebuffer(void) {
         ((GLRenderer *)g_runner->renderer)->hostFramebuffer = framebuffer;
 #endif
     glViewport(0, 0, fbWidth, fbHeight);
+    GLenum fbStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    NSLog(@"[BS] resizeFramebuffer: %dx%d fbo=%u rb=%u status=0x%x",
+          fbWidth, fbHeight, framebuffer, renderbuffer, fbStatus);
 }
 
 bool platformInit(int32_t reqW, int32_t reqH, const char *title, bool headless) {
@@ -316,6 +319,9 @@ void platformInitFunctions(Runner *runner) {
 }
 
 void platformSwapBuffers(void) {
+    /* GLRenderer may have left a different FBO/RBO bound — restore ours */
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
     [glcontext presentRenderbuffer:GL_RENDERBUFFER];
 }
 

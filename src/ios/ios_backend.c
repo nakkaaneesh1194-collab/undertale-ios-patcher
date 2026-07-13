@@ -36,6 +36,7 @@
 
 static atomic_bool needsResize = false;
 static atomic_bool quitRequested = false;
+static atomic_bool viewLaidOut = false;  /* set by first layoutSubviews */
 static EAGLContext *glcontext;
 static GLuint framebuffer;
 static GLuint renderbuffer;
@@ -365,6 +366,7 @@ void platformSleepUntil(uint64_t time) {
         self.frame = bsLayout.gameFrame;
     }
     atomic_store(&needsResize, true);
+    atomic_store(&viewLaidOut, true);  /* signal game thread it's safe to start */
 }
 - (void)dealloc { [super dealloc]; }
 @end
@@ -569,6 +571,12 @@ extern int game_main(int argc, char *argv[]);
 
 - (void)gameThread {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
+
+    /* Wait for GLView to be laid out so the framebuffer has a real size */
+    while (!atomic_load(&viewLaidOut)) {
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 8000000 }; /* 8ms */
+        nanosleep(&ts, NULL);
+    }
 
     static char arg0[] = "butterscotch";
     static char arg1[] = "--lazy-textures";

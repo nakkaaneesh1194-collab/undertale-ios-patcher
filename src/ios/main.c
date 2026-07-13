@@ -112,6 +112,7 @@ int game_main(int argc, char *argv[]) {
 
 #ifdef ENABLE_MODERN_GL
     Renderer *renderer = GLRenderer_create();
+    ((GLRenderer *)renderer)->isGLES = true;  /* iOS always uses OpenGL ES */
 #else
     Renderer *renderer = NULL;
 #endif

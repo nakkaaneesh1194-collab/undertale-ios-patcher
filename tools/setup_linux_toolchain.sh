@@ -46,6 +46,7 @@ sudo apt-get install -y -qq \
     git pkg-config \
     libssl-dev uuid-dev \
     libplist-dev \
+    libblocksruntime-dev \
     zip unzip curl \
     python3 \
     2>/dev/null

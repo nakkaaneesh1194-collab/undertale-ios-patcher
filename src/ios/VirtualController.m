@@ -38,7 +38,7 @@ static void VCInit(void) {
 #else
                     GCInputDirectionPad,
 #endif
-                    GCInputButtonMenu
+                    // GCInputButtonMenu is not supported as a virtual element
                 ]];
                 gVirtualController =
                     [GCVirtualController virtualControllerWithConfiguration:config];

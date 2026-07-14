@@ -314,7 +314,15 @@ void platformInitFunctions(Runner *runner) {
         glGenRenderbuffers(1, &renderbuffer);
         glInited = true;
     }
-    resizeFramebuffer();
+    /* The EAGL layer's drawable may not be ready yet even after layoutSubviews.
+     * Retry until we get a non-zero framebuffer size (max ~2.5 s). */
+    for (int attempt = 0; attempt < 50; attempt++) {
+        resizeFramebuffer();
+        if (fbWidth > 0 && fbHeight > 0) break;
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 50000000 }; /* 50 ms */
+        nanosleep(&ts, NULL);
+    }
+    NSLog(@"[BS] platformInitFunctions done: %dx%d", fbWidth, fbHeight);
     atomic_store(&needsResize, false);
 }
 

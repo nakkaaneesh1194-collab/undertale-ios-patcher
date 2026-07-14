@@ -379,6 +379,10 @@ void platformSleepUntil(uint64_t time) {
         BSLayout bsLayout = computeLayout(self.superview.bounds.size);
         self.frame = bsLayout.gameFrame;
     }
+    /* Force the CAEAGLLayer to be committed to the display server now.
+     * Without this, renderbufferStorage:fromDrawable: returns 0x0 on cold
+     * launch because the layer hasn't gone through a display cycle yet. */
+    [CATransaction flush];
     atomic_store(&needsResize, true);
     atomic_store(&viewLaidOut, true);  /* signal game thread it's safe to start */
 }

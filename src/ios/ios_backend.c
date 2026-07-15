@@ -338,18 +338,25 @@ void platformInitFunctions(Runner *runner) {
     atomic_store(&needsResize, false);
 }
 
+static int g_swapCount = 0;
 void platformSwapBuffers(void) {
     /* GLRenderer may have left a different FBO/RBO bound — restore ours */
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
     glFlush();
 
-    /* Signal the CADisplayLink callback (running on the main thread) to
-     * present the renderbuffer, then wait for it to confirm. This way
-     * presentRenderbuffer always runs on the main thread which has
-     * persistent foreground GPU access under LiveContainer. */
+    g_swapCount++;
+    fprintf(stderr, "[BS] swap #%d: signaling frameReady\n", g_swapCount);
+
     dispatch_semaphore_signal(sema_frameReady);
-    dispatch_semaphore_wait(sema_framePresented, DISPATCH_TIME_FOREVER);
+
+    fprintf(stderr, "[BS] swap #%d: waiting for framePresented\n", g_swapCount);
+    long r = dispatch_semaphore_wait(sema_framePresented, dispatch_time(DISPATCH_TIME_NOW, 3LL * NSEC_PER_SEC));
+    if (r != 0) {
+        fprintf(stderr, "[BS] swap #%d: TIMEOUT waiting for framePresented!\n", g_swapCount);
+    } else {
+        fprintf(stderr, "[BS] swap #%d: framePresented received\n", g_swapCount);
+    }
 
     [EAGLContext setCurrentContext:glcontext];
 }
@@ -736,17 +743,22 @@ extern int game_main(int argc, char *argv[]);
  * On the first tick, signals the game thread to start.
  * On subsequent ticks, presents the renderbuffer if the game thread
  * has finished rendering a frame. */
+static int g_dlTickCount = 0;
 - (void)_displayLinkTick:(CADisplayLink *)link {
+    g_dlTickCount++;
     if (!_gameThreadStarted) {
+        fprintf(stderr, "[BS] DL tick #%d: starting game thread\n", g_dlTickCount);
         _gameThreadStarted = YES;
         atomic_store(&viewLaidOut, true);
         return;
     }
     /* Non-blocking check: only present if a frame is ready */
     if (dispatch_semaphore_wait(sema_frameReady, DISPATCH_TIME_NOW) == 0) {
+        fprintf(stderr, "[BS] DL tick #%d: presenting\n", g_dlTickCount);
         [EAGLContext setCurrentContext:glcontext];
         glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
         [glcontext presentRenderbuffer:GL_RENDERBUFFER];
+        fprintf(stderr, "[BS] DL tick #%d: present done\n", g_dlTickCount);
         dispatch_semaphore_signal(sema_framePresented);
     }
 }

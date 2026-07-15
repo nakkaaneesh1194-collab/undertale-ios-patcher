@@ -38,6 +38,12 @@ static atomic_bool needsResize = false;
 static atomic_bool quitRequested = false;
 static atomic_bool viewLaidOut = false;  /* set by first layoutSubviews */
 static atomic_bool appIsActive = false;  /* false until applicationDidBecomeActive */
+
+/* CADisplayLink-based present: game thread signals readyToPresent, display
+ * link on main thread does the actual presentRenderbuffer on vsync. */
+static dispatch_semaphore_t sema_frameReady;   /* game thread posts, DL waits */
+static dispatch_semaphore_t sema_framePresented; /* DL posts, game thread waits */
+static CADisplayLink *g_displayLink = nil;
 static EAGLContext *glcontext;
 static GLuint framebuffer;
 static GLuint renderbuffer;
@@ -336,20 +342,15 @@ void platformSwapBuffers(void) {
     /* GLRenderer may have left a different FBO/RBO bound — restore ours */
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
-    glFinish(); /* flush all GL commands before handing off to main thread */
+    glFlush();
 
-    /* Under LiveContainer the game thread doesn't have persistent foreground
-     * GPU access — presentRenderbuffer blocks if called from a background
-     * thread without it. Dispatching to the main thread (which LiveContainer
-     * keeps in the foreground) fixes the hang. */
-    EAGLContext *ctx = glcontext;
-    GLuint rb = renderbuffer;
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        [EAGLContext setCurrentContext:ctx];
-        glBindRenderbuffer(GL_RENDERBUFFER, rb);
-        [ctx presentRenderbuffer:GL_RENDERBUFFER];
-    });
-    /* Restore context on game thread */
+    /* Signal the CADisplayLink callback (running on the main thread) to
+     * present the renderbuffer, then wait for it to confirm. This way
+     * presentRenderbuffer always runs on the main thread which has
+     * persistent foreground GPU access under LiveContainer. */
+    dispatch_semaphore_signal(sema_frameReady);
+    dispatch_semaphore_wait(sema_framePresented, DISPATCH_TIME_FOREVER);
+
     [EAGLContext setCurrentContext:glcontext];
 }
 
@@ -598,7 +599,7 @@ extern int game_main(int argc, char *argv[]);
     BSTouchOverlay *overlay;
     UIView *rootView;
     BOOL usingRootViewController;
-    CADisplayLink *_startupDisplayLink;
+    /* _startupDisplayLink removed — using g_displayLink global */
     BOOL _gameThreadStarted;
 }
 - (void)startGame;
@@ -663,6 +664,9 @@ extern int game_main(int argc, char *argv[]);
     atomic_store(&viewLaidOut, false);
     _gameThreadStarted = NO;
 
+    sema_frameReady     = dispatch_semaphore_create(0);
+    sema_framePresented = dispatch_semaphore_create(0);
+
     CGRect bounds = [[UIScreen mainScreen] bounds];
     BSLayout bsLayout = computeLayout(bounds.size);
 
@@ -690,13 +694,11 @@ extern int game_main(int argc, char *argv[]);
         [window addSubview:rootView];
     }
 
-    /* Use a CADisplayLink so the game thread starts only after the first
-     * vsync — by then the CAEAGLLayer is committed and renderbufferStorage
-     * returns real pixel dimensions. */
-    _startupDisplayLink = [CADisplayLink displayLinkWithTarget:self
-                                                      selector:@selector(_firstVsync:)];
-    [_startupDisplayLink addToRunLoop:[NSRunLoop mainRunLoop]
-                              forMode:NSDefaultRunLoopMode];
+    /* Single CADisplayLink used for both startup signaling and frame presenting */
+    g_displayLink = [CADisplayLink displayLinkWithTarget:self
+                                                selector:@selector(_displayLinkTick:)];
+    [g_displayLink addToRunLoop:[NSRunLoop mainRunLoop]
+                        forMode:NSRunLoopCommonModes];
 
     [NSThread detachNewThreadSelector:@selector(gameThread) toTarget:self withObject:nil];
 }
@@ -730,15 +732,22 @@ extern int game_main(int argc, char *argv[]);
     bsRequestRelayout();
 }
 
-/* Called on the first CADisplayLink tick — by this point the CAEAGLLayer
- * has been committed to the display server and renderbufferStorage will
- * return real pixel dimensions. */
-- (void)_firstVsync:(CADisplayLink *)link {
-    [link invalidate];
-    _startupDisplayLink = nil;
+/* CADisplayLink callback — runs on the main thread every vsync.
+ * On the first tick, signals the game thread to start.
+ * On subsequent ticks, presents the renderbuffer if the game thread
+ * has finished rendering a frame. */
+- (void)_displayLinkTick:(CADisplayLink *)link {
     if (!_gameThreadStarted) {
         _gameThreadStarted = YES;
         atomic_store(&viewLaidOut, true);
+        return;
+    }
+    /* Non-blocking check: only present if a frame is ready */
+    if (dispatch_semaphore_wait(sema_frameReady, DISPATCH_TIME_NOW) == 0) {
+        [EAGLContext setCurrentContext:glcontext];
+        glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+        [glcontext presentRenderbuffer:GL_RENDERBUFFER];
+        dispatch_semaphore_signal(sema_framePresented);
     }
 }
 

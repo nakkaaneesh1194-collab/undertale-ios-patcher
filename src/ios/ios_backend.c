@@ -210,6 +210,10 @@ void platformSetWindowTitle(const char* title) { (void)title; }
 
 bool platformGetWindowSize(int32_t* outW, int32_t* outH) {
     if (!outW || !outH) return false;
+    if (fbWidth <= 0 || fbHeight <= 0) {
+        /* Layer not ready yet — retry framebuffer allocation */
+        resizeFramebuffer();
+    }
     if (fbWidth <= 0 || fbHeight <= 0) return false;
     *outW = fbWidth; *outH = fbHeight;
     return true;
@@ -323,6 +327,7 @@ void platformInitFunctions(Runner *runner) {
         nanosleep(&ts, NULL);
     }
     NSLog(@"[BS] platformInitFunctions done: %dx%d", fbWidth, fbHeight);
+    fprintf(stderr, "[BS] platformInitFunctions done: %dx%d\n", fbWidth, fbHeight);
     atomic_store(&needsResize, false);
 }
 

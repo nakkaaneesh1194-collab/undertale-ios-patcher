@@ -379,12 +379,11 @@ void platformSleepUntil(uint64_t time) {
         BSLayout bsLayout = computeLayout(self.superview.bounds.size);
         self.frame = bsLayout.gameFrame;
     }
-    /* Force the CAEAGLLayer to be committed to the display server now.
-     * Without this, renderbufferStorage:fromDrawable: returns 0x0 on cold
-     * launch because the layer hasn't gone through a display cycle yet. */
-    [CATransaction flush];
     atomic_store(&needsResize, true);
-    atomic_store(&viewLaidOut, true);  /* signal game thread it's safe to start */
+    /* Do NOT set viewLaidOut here — the CAEAGLLayer isn't committed to the
+     * display server yet at this point on cold launch.  We set it in
+     * applicationDidBecomeActive instead, which fires only after the app
+     * is fully foregrounded and the layer is live. */
 }
 - (void)dealloc { [super dealloc]; }
 @end
@@ -688,6 +687,13 @@ extern int game_main(int argc, char *argv[]);
     rootView.center = CGPointMake(CGRectGetMidX(nativeBounds), CGRectGetMidY(nativeBounds));
     [UIView commitAnimations];
     bsRequestRelayout();
+}
+
+- (void)applicationDidBecomeActive:(UIApplication *)application {
+    /* By the time this fires the CAEAGLLayer is committed to the display
+     * server, so renderbufferStorage:fromDrawable: will return real dimensions.
+     * Signal the game thread that it's safe to init the framebuffer. */
+    atomic_store(&viewLaidOut, true);
 }
 
 - (void)applicationDidFinishLaunching:(UIApplication *)application {

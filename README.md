@@ -33,6 +33,12 @@ cd undertale-ios-patcher
 chmod +x build.sh
 ./build.sh
 ```
+If on linux, run:
+
+```bash
+chmod +x build.sh
+bash ./build.sh
+```
 
 The script will ask you a couple of questions. If unsure, press y.
 

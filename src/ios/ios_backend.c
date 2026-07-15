@@ -578,6 +578,8 @@ extern int game_main(int argc, char *argv[]);
     BSTouchOverlay *overlay;
     UIView *rootView;
     BOOL usingRootViewController;
+    CADisplayLink *_startupDisplayLink;
+    BOOL _gameThreadStarted;
 }
 - (void)startGame;
 - (void)applyDeviceOrientation:(UIDeviceOrientation)devOrientation;
@@ -629,6 +631,8 @@ extern int game_main(int argc, char *argv[]);
     strlcpy(g_saveFolderPath, [saveDir fileSystemRepresentation], sizeof(g_saveFolderPath));
 
     atomic_store(&quitRequested, false);
+    atomic_store(&viewLaidOut, false);
+    _gameThreadStarted = NO;
 
     CGRect bounds = [[UIScreen mainScreen] bounds];
     BSLayout bsLayout = computeLayout(bounds.size);
@@ -656,6 +660,14 @@ extern int game_main(int argc, char *argv[]);
         for (UIView *sub in subs) [sub removeFromSuperview];
         [window addSubview:rootView];
     }
+
+    /* Use a CADisplayLink so the game thread starts only after the first
+     * vsync — by then the CAEAGLLayer is committed and renderbufferStorage
+     * returns real pixel dimensions. */
+    _startupDisplayLink = [CADisplayLink displayLinkWithTarget:self
+                                                      selector:@selector(_firstVsync:)];
+    [_startupDisplayLink addToRunLoop:[NSRunLoop mainRunLoop]
+                              forMode:NSDefaultRunLoopMode];
 
     [NSThread detachNewThreadSelector:@selector(gameThread) toTarget:self withObject:nil];
 }
@@ -689,11 +701,16 @@ extern int game_main(int argc, char *argv[]);
     bsRequestRelayout();
 }
 
-- (void)applicationDidBecomeActive:(UIApplication *)application {
-    /* By the time this fires the CAEAGLLayer is committed to the display
-     * server, so renderbufferStorage:fromDrawable: will return real dimensions.
-     * Signal the game thread that it's safe to init the framebuffer. */
-    atomic_store(&viewLaidOut, true);
+/* Called on the first CADisplayLink tick — by this point the CAEAGLLayer
+ * has been committed to the display server and renderbufferStorage will
+ * return real pixel dimensions. */
+- (void)_firstVsync:(CADisplayLink *)link {
+    [link invalidate];
+    _startupDisplayLink = nil;
+    if (!_gameThreadStarted) {
+        _gameThreadStarted = YES;
+        atomic_store(&viewLaidOut, true);
+    }
 }
 
 - (void)applicationDidFinishLaunching:(UIApplication *)application {

@@ -333,13 +333,6 @@ void platformInitFunctions(Runner *runner) {
 }
 
 void platformSwapBuffers(void) {
-    /* Block until iOS has granted foreground GPU access.
-     * On cold launch under LiveContainer the process starts in the background
-     * and every GPU command is rejected until applicationDidBecomeActive fires. */
-    while (!atomic_load(&appIsActive)) {
-        struct timespec ts = { .tv_sec = 0, .tv_nsec = 8000000 };
-        nanosleep(&ts, NULL);
-    }
     /* GLRenderer may have left a different FBO/RBO bound — restore ours */
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
@@ -604,9 +597,18 @@ extern int game_main(int argc, char *argv[]);
 - (void)gameThread {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 
-    /* Wait for GLView to be laid out so the framebuffer has a real size */
+    /* Wait for the CADisplayLink first-vsync signal */
     while (!atomic_load(&viewLaidOut)) {
         struct timespec ts = { .tv_sec = 0, .tv_nsec = 8000000 }; /* 8ms */
+        nanosleep(&ts, NULL);
+    }
+
+    /* Under LiveContainer, iOS doesn't grant foreground GPU access until
+     * a moment after the app is visible. applicationDidBecomeActive is not
+     * reliably forwarded, so we wait a fixed 1.5s for the GPU to become
+     * available rather than spinning on a flag that never gets set. */
+    {
+        struct timespec ts = { .tv_sec = 1, .tv_nsec = 500000000 }; /* 1.5s */
         nanosleep(&ts, NULL);
     }
 

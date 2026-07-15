@@ -336,7 +336,21 @@ void platformSwapBuffers(void) {
     /* GLRenderer may have left a different FBO/RBO bound — restore ours */
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
-    [glcontext presentRenderbuffer:GL_RENDERBUFFER];
+    glFinish(); /* flush all GL commands before handing off to main thread */
+
+    /* Under LiveContainer the game thread doesn't have persistent foreground
+     * GPU access — presentRenderbuffer blocks if called from a background
+     * thread without it. Dispatching to the main thread (which LiveContainer
+     * keeps in the foreground) fixes the hang. */
+    EAGLContext *ctx = glcontext;
+    GLuint rb = renderbuffer;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        [EAGLContext setCurrentContext:ctx];
+        glBindRenderbuffer(GL_RENDERBUFFER, rb);
+        [ctx presentRenderbuffer:GL_RENDERBUFFER];
+    });
+    /* Restore context on game thread */
+    [EAGLContext setCurrentContext:glcontext];
 }
 
 void *platformGetProcAddress(const char *name) {

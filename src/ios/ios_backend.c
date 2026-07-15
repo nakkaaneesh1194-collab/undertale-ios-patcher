@@ -37,6 +37,7 @@
 static atomic_bool needsResize = false;
 static atomic_bool quitRequested = false;
 static atomic_bool viewLaidOut = false;  /* set by first layoutSubviews */
+static atomic_bool appIsActive = false;  /* false until applicationDidBecomeActive */
 static EAGLContext *glcontext;
 static GLuint framebuffer;
 static GLuint renderbuffer;
@@ -332,6 +333,13 @@ void platformInitFunctions(Runner *runner) {
 }
 
 void platformSwapBuffers(void) {
+    /* Block until iOS has granted foreground GPU access.
+     * On cold launch under LiveContainer the process starts in the background
+     * and every GPU command is rejected until applicationDidBecomeActive fires. */
+    while (!atomic_load(&appIsActive)) {
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 8000000 };
+        nanosleep(&ts, NULL);
+    }
     /* GLRenderer may have left a different FBO/RBO bound — restore ours */
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
@@ -716,6 +724,14 @@ extern int game_main(int argc, char *argv[]);
         _gameThreadStarted = YES;
         atomic_store(&viewLaidOut, true);
     }
+}
+
+- (void)applicationDidBecomeActive:(UIApplication *)application {
+    atomic_store(&appIsActive, true);
+}
+
+- (void)applicationWillResignActive:(UIApplication *)application {
+    atomic_store(&appIsActive, false);
 }
 
 - (void)applicationDidFinishLaunching:(UIApplication *)application {

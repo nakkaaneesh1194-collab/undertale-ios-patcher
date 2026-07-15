@@ -213,6 +213,8 @@ static void bsRequestRelayout(void) {
 
 /* ── Platform function implementations ────────────────────────── */
 
+static void resizeFramebuffer(void); /* forward declaration */
+
 void platformSetWindowTitle(const char* title) { (void)title; }
 
 bool platformGetWindowSize(int32_t* outW, int32_t* outH) {

@@ -229,22 +229,17 @@ else
     success "Butterscotch source: found"
 fi
 
-# --- Apply iOS patch to Butterscotch if not already applied ---
+# --- Apply iOS patch to Butterscotch (always copy so edits take effect) ---
 IOS_MARKER="$BUTTERSCOTCH_DIR/src/ios/main.c"
 if [ ! -f "$IOS_MARKER" ]; then
-    info "Applying iOS patch to Butterscotch..."
-
+    info "Patching Butterscotch CMakeLists.txt..."
     python3 "$SCRIPT_DIR/src/ios/patch_cmake.py" "$BUTTERSCOTCH_DIR/CMakeLists.txt" \
         || error "Failed to patch Butterscotch CMakeLists.txt."
-
-    mkdir -p "$BUTTERSCOTCH_DIR/src/ios"
-    cp "$SCRIPT_DIR/src/ios/"* "$BUTTERSCOTCH_DIR/src/ios/" \
-        || error "Failed to copy src/ios/ into Butterscotch."
-
-    success "iOS patch applied to Butterscotch"
-else
-    success "Butterscotch iOS patch: already applied"
 fi
+mkdir -p "$BUTTERSCOTCH_DIR/src/ios"
+cp "$SCRIPT_DIR/src/ios/"* "$BUTTERSCOTCH_DIR/src/ios/" \
+    || error "Failed to copy src/ios/ into Butterscotch."
+success "iOS sources synced to Butterscotch"
 
 # No SDL2 needed — using UIKit/EAGL directly
 

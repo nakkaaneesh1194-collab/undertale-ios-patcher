@@ -322,6 +322,7 @@ void platformExit(void) {
 
 void platformInitFunctions(Runner *runner) {
     g_runner = runner;
+    /* framebuffer/renderbuffer already created in startGame before game thread launch */
     if (!glInited) {
         glGenFramebuffers(1, &framebuffer);
         glGenRenderbuffers(1, &renderbuffer);
@@ -697,6 +698,26 @@ extern int game_main(int argc, char *argv[]);
         [window addSubview:rootView];
     }
 
+    /* Pre-create the GL framebuffer/renderbuffer on the main thread so the
+     * display link probe can call presentRenderbuffer before the game thread starts. */
+    if (!glcontext) {
+        glcontext = [[EAGLContext alloc] initWithAPI:3];
+        if (!glcontext) glcontext = [[EAGLContext alloc] initWithAPI:2];
+    }
+    if (glcontext && [EAGLContext setCurrentContext:glcontext] && !glInited) {
+        glGenFramebuffers(1, &framebuffer);
+        glGenRenderbuffers(1, &renderbuffer);
+        glInited = true;
+        /* Attach renderbuffer storage from the layer so presentRenderbuffer works */
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+        [glcontext renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer];
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH, &fbWidth);
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, &fbHeight);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, renderbuffer);
+        fprintf(stderr, "[BS] startGame: GL preinit %dx%d\n", fbWidth, fbHeight);
+    }
+
     /* Single CADisplayLink used for both startup signaling and frame presenting */
     g_displayLink = [CADisplayLink displayLinkWithTarget:self
                                                 selector:@selector(_displayLinkTick:)];
@@ -745,27 +766,35 @@ static int g_dlTickCount = 0;
     g_dlTickCount++;
 
     if (!_gameThreadStarted) {
-        /* Don't start the game thread until the app is actually foregrounded.
-         * Under LiveContainer, applicationDidBecomeActive may not fire on cold
-         * launch — check applicationState directly as a fallback.  The GPU is
-         * only accessible once we're in UIApplicationStateActive. */
-        BOOL isActive = atomic_load(&appIsActive);
-        if (!isActive) {
-            isActive = ([[UIApplication sharedApplication] applicationState]
-                        == UIApplicationStateActive);
-        }
-        if (!isActive) {
-            if (g_dlTickCount % 60 == 0) /* ~once per second */
-                fprintf(stderr, "[BS] DL tick #%d: waiting for foreground\n", g_dlTickCount);
-            return;
-        }
-        fprintf(stderr, "[BS] DL tick #%d: foregrounded — starting game thread\n", g_dlTickCount);
+        /* Probe whether the GPU will actually accept a present.
+         * Under LiveContainer the guest starts in background; presentRenderbuffer
+         * returns NO (and the GPU logs kIOGPUCommandBufferCallbackErrorBackground...)
+         * until the host app grants foreground GPU access.  We try a dummy present
+         * each tick until it returns YES, then signal the game thread to start.
+         * This works regardless of whether applicationDidBecomeActive fires. */
+        if (!glcontext || !layer) return;
+        [EAGLContext setCurrentContext:glcontext];
+        /* Bind our renderbuffer so the present has something to show */
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+        /* Clear to black — this is the "splash" frame while we wait */
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glFlush();
+        BOOL ok = [glcontext presentRenderbuffer:GL_RENDERBUFFER];
+        if (g_dlTickCount % 60 == 0)
+            fprintf(stderr, "[BS] DL tick #%d: probe present=%s\n",
+                    g_dlTickCount, ok ? "YES" : "NO");
+        if (!ok) return; /* GPU not ready yet — try again next vsync */
+
+        /* presentRenderbuffer succeeded — GPU access is granted, start game */
+        fprintf(stderr, "[BS] DL tick #%d: GPU ready, starting game thread\n", g_dlTickCount);
         _gameThreadStarted = YES;
         atomic_store(&viewLaidOut, true);
         return;
     }
 
-    /* Non-blocking check: only present if the game thread has a frame ready */
+    /* Normal frame present: game thread signals when a frame is ready */
     if (dispatch_semaphore_wait(sema_frameReady, DISPATCH_TIME_NOW) == 0) {
         [EAGLContext setCurrentContext:glcontext];
         glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);

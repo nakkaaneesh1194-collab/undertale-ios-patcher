@@ -627,14 +627,8 @@ extern int game_main(int argc, char *argv[]);
         nanosleep(&ts, NULL);
     }
 
-    /* Under LiveContainer, iOS doesn't grant foreground GPU access until
-     * a moment after the app is visible. applicationDidBecomeActive is not
-     * reliably forwarded, so we wait a fixed 1.5s for the GPU to become
-     * available rather than spinning on a flag that never gets set. */
-    {
-        struct timespec ts = { .tv_sec = 1, .tv_nsec = 500000000 }; /* 1.5s */
-        nanosleep(&ts, NULL);
-    }
+    /* The display link already waited for UIApplicationStateActive before
+     * setting viewLaidOut, so the GPU is ready by the time we get here. */
 
     static char arg0[] = "butterscotch";
     static char arg1[] = "--lazy-textures";
@@ -747,20 +741,35 @@ extern int game_main(int argc, char *argv[]);
  * has finished rendering a frame. */
 static int g_dlTickCount = 0;
 - (void)_displayLinkTick:(CADisplayLink *)link {
+    (void)link;
     g_dlTickCount++;
+
     if (!_gameThreadStarted) {
-        fprintf(stderr, "[BS] DL tick #%d: starting game thread\n", g_dlTickCount);
+        /* Don't start the game thread until the app is actually foregrounded.
+         * Under LiveContainer, applicationDidBecomeActive may not fire on cold
+         * launch — check applicationState directly as a fallback.  The GPU is
+         * only accessible once we're in UIApplicationStateActive. */
+        BOOL isActive = atomic_load(&appIsActive);
+        if (!isActive) {
+            isActive = ([[UIApplication sharedApplication] applicationState]
+                        == UIApplicationStateActive);
+        }
+        if (!isActive) {
+            if (g_dlTickCount % 60 == 0) /* ~once per second */
+                fprintf(stderr, "[BS] DL tick #%d: waiting for foreground\n", g_dlTickCount);
+            return;
+        }
+        fprintf(stderr, "[BS] DL tick #%d: foregrounded — starting game thread\n", g_dlTickCount);
         _gameThreadStarted = YES;
         atomic_store(&viewLaidOut, true);
         return;
     }
-    /* Non-blocking check: only present if a frame is ready */
+
+    /* Non-blocking check: only present if the game thread has a frame ready */
     if (dispatch_semaphore_wait(sema_frameReady, DISPATCH_TIME_NOW) == 0) {
-        fprintf(stderr, "[BS] DL tick #%d: presenting\n", g_dlTickCount);
         [EAGLContext setCurrentContext:glcontext];
         glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
         [glcontext presentRenderbuffer:GL_RENDERBUFFER];
-        fprintf(stderr, "[BS] DL tick #%d: present done\n", g_dlTickCount);
         dispatch_semaphore_signal(sema_framePresented);
     }
 }

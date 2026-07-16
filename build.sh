@@ -241,6 +241,13 @@ cp "$SCRIPT_DIR/src/ios/"* "$BUTTERSCOTCH_DIR/src/ios/" \
     || error "Failed to copy src/ios/ into Butterscotch."
 success "iOS sources synced to Butterscotch"
 
+# Fix gl_wrappers.h: remove desktop-only EXT fallbacks that don't exist on OpenGL ES
+GL_WRAPPERS="$BUTTERSCOTCH_DIR/src/gl_common/gl_wrappers.h"
+if [ -f "$GL_WRAPPERS" ]; then
+    sed -i 's/    else glBlendEquationEXT(mode);/    \/* glBlendEquationEXT not on GLES *\//' "$GL_WRAPPERS"
+    sed -i 's/    else glBlendFuncSeparateEXT(sfactorRGB, dfactorRGB, sfactorAlpha, dfactorAlpha);/    \/* glBlendFuncSeparateEXT not on GLES *\//' "$GL_WRAPPERS"
+fi
+
 # No SDL2 needed — using UIKit/EAGL directly
 
 echo ""

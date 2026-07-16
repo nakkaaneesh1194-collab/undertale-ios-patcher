@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Self-heal CRLF line endings — must be before set -e.
+# If Windows tools have added \r, strip and re-exec automatically.
+case "$(cat -A "$0" 2>/dev/null | head -5 | grep -c '\^M')" in [1-9]*)
+    sed -i 's/\r//' "$0" && exec bash "$0" "$@";; esac
 # ============================================================
 #  undertale-ios-patcher  v2.0
 #  Builds Butterscotch for iOS and packages Undertale as an IPA

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Self-heal CRLF line endings — must be before set -e.
+case "$(cat -A "$0" 2>/dev/null | head -5 | grep -c '\^M')" in [1-9]*)
+    sed -i 's/\r//' "$0" && exec bash "$0" "$@";; esac
 # setup_linux_toolchain.sh — run ONCE on Linux/WSL to set up the iOS cross-compiler.
 #
 # No Mac required — downloads the iPhoneOS SDK from xybp888/iOS-SDKs on GitHub.
@@ -17,9 +20,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLCHAIN_DIR="$HOME/.local/ios-toolchain"
 SDK_VERSION="17.5"
 SDK_NAME="iPhoneOS${SDK_VERSION}.sdk"
-# Tag archive of the full repo — SDK files are git-tracked, so .tbd stubs are intact on Linux
-SDK_URL="https://github.com/xybp888/iOS-SDKs/archive/refs/tags/iOS${SDK_VERSION}-SDKs.tar.gz"
-SDK_ARCHIVE_PREFIX="iOS-SDKs-iOS${SDK_VERSION}-SDKs"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -56,8 +56,6 @@ success "System packages installed"
 mkdir -p "$TOOLCHAIN_DIR"/{bin,sdk}
 
 # ── Download SDK ───────────────────────────────────────────────
-SDK_PATH="$TOOLCHAIN_DIR/sdk/$SDK_NAME"
-SDK_TARBALL="$TOOLCHAIN_DIR/sdk/$SDK_NAME.tar.gz"
 LOCAL_TARBALL="$SCRIPT_DIR/iPhoneOS.sdk.tar.gz"
 mkdir -p "$TOOLCHAIN_DIR/sdk"
 

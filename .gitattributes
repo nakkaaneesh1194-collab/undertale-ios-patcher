@@ -1,0 +1,32 @@
+# Enforce LF line endings for all text files on all platforms.
+# Prevents Windows tools from introducing \r\n into shell scripts.
+
+* text=auto eol=lf
+
+# Source files — always LF
+*.sh    text eol=lf
+*.py    text eol=lf
+*.cmake text eol=lf
+*.c     text eol=lf
+*.m     text eol=lf
+*.h     text eol=lf
+*.csx   text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.plist text eol=lf
+*.json  text eol=lf
+*.xml   text eol=lf
+
+# Binary files — no line ending conversion
+*.ipa   binary
+*.zip   binary
+*.tar   binary
+*.gz    binary
+*.a     binary
+*.dylib binary
+*.so    binary
+*.png   binary
+*.jpg   binary
+*.ogg   binary
+*.wav   binary
+*.win   binary
